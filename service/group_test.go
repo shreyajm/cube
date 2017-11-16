@@ -17,7 +17,7 @@ type svcWithHooks svc
 
 func newSvcWithHooks(ctx Context) *svcWithHooks {
 	s := &svcWithHooks{}
-	ctx.AddHook(&Lifecycle{
+	ctx.AddLifecycle(&Lifecycle{
 		ConfigHook: func(svc *svcWithHooks) { svc.configureCalled = true },
 		StartHook:  func(svc *svcWithHooks) { svc.startCalled = true },
 		StopHook:   func(svc *svcWithHooks) { svc.stopCalled = true },
@@ -30,7 +30,7 @@ type svcWithErrors svc
 
 func newSvcWithErrors(ctx Context) *svcWithErrors {
 	s := &svcWithErrors{}
-	ctx.AddHook(&Lifecycle{
+	ctx.AddLifecycle(&Lifecycle{
 		ConfigHook: func(svc *svcWithErrors) error {
 			svc.configureCalled = true
 			return fmt.Errorf("config error")

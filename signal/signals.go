@@ -49,7 +49,7 @@ func NewSignalRouter(ctx service.Context) Router {
 		lock:       &sync.RWMutex{},
 	}
     // Hooking Signal Router to the ctx
-    ctx.AddHook(&service.Lifecycle{
+    ctx.AddLifecycle(&service.Lifecycle{
         StartHook: StartRouter,
         StopHook: StopRouter,
         ConfigHook: nil,

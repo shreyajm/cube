@@ -25,11 +25,11 @@ type Lifecycle struct {
 //
 // Shutdown() cancels the go context.
 //
-// AddHook() adds a service lifecycle hook to the context
+// AddLifecycle() adds a service lifecycle hook to the context
 type Context interface {
 	Ctx() context.Context
 	Shutdown()
-	AddHook(*Lifecycle)
+	AddLifecycle(*Lifecycle)
 }
 
 // NewContext creates a new service context.
@@ -61,6 +61,6 @@ func (sc *srvCtx) Shutdown() {
 	sc.cancelFunc()
 }
 
-func (sc *srvCtx) AddHook(lc *Lifecycle) {
+func (sc *srvCtx) AddLifecycle(lc *Lifecycle) {
 	sc.hooks = append(sc.hooks, lc)
 }
