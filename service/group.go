@@ -10,6 +10,7 @@ type Group struct {
 	parent    *Group
 	container *dig.Container
 	ctx       *srvCtx
+	invokers  []interface{}
 }
 
 // NewGroup creates a new service group with the specified parent. If the parent is nil
@@ -29,6 +30,7 @@ func NewGroup(name string, parent *Group) *Group {
 		parent:    parent,
 		container: container,
 		ctx:       ctx,
+		invokers:  []interface{}{},
 	}
 
 	// Provide the context if we are the root group
@@ -41,9 +43,28 @@ func NewGroup(name string, parent *Group) *Group {
 }
 
 // AddService adds a new service constructor to the service group.
-func (g *Group) AddService(ctr interface{}) error {
+func (g *Group) AddService(ctr interface{}, invoker interface{}) error {
+	if invoker != nil {
+		g.invokers = append(g.invokers, invoker)
+	}
 	// add the service constructor to the container
 	return g.container.Provide(ctr)
+}
+
+// Create creates the leaf level services, that bootstraps the service group
+func (g *Group) Create() error {
+	for _, inv := range g.invokers {
+		if err := g.container.Invoke(inv); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// Invoke invokes a function with dependency injection.
+func (g *Group) Invoke(f interface{}) error {
+	return g.container.Invoke(f)
 }
 
 // Configure calls the configure hooks on all services registered for configuration.
