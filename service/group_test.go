@@ -83,7 +83,7 @@ func TestGroup(t *testing.T) {
 				Convey("we should be able to start the group", func() {
 					So(grp.Start(), ShouldBeNil)
 					So(s.startCalled, ShouldBeTrue)
-					//So(grp.IsHealthy(), ShouldBeTrue)
+					So(grp.IsHealthy(), ShouldBeTrue)
 				})
 				Convey("we should be able to stop the group", func() {
 					So(grp.Stop(), ShouldBeNil)
@@ -138,7 +138,7 @@ func TestGroupHierarchy(t *testing.T) {
 					Convey("we should be able to start the group", func() {
 						So(grp.Start(), ShouldBeNil)
 						So(s.startCalled, ShouldBeTrue)
-						// So(grp.IsHealthy(), ShouldBeTrue)
+						So(grp.IsHealthy(), ShouldBeTrue)
 					})
 					Convey("we should be able to stop the group", func() {
 						So(grp.Stop(), ShouldBeNil)

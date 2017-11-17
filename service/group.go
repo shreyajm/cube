@@ -1,41 +1,39 @@
 package service
 
-import (
-	"github.com/anuvu/dig"
-)
+import "reflect"
 
 // Group is a group of services, that have inter-dependencies.
 type Group struct {
-	name      string
-	parent    *Group
-	container *dig.Container
-	ctx       *srvCtx
-	invokers  []interface{}
+	name     string
+	parent   *Group
+	c        *container
+	ctx      *srvCtx
+	invokers []interface{}
 }
 
 // NewGroup creates a new service group with the specified parent. If the parent is nil
 // this group is the root group.
 func NewGroup(name string, parent *Group) *Group {
-	var container *dig.Container
+	var c *container
 	var ctx *srvCtx
 	if parent == nil {
-		container = dig.New()
+		c = newContainer(nil)
 		ctx = newContext()
 	} else {
-		container = dig.NewWithParent(parent.container)
+		c = newContainer(parent.c)
 		ctx = parent.ctx
 	}
 	grp := &Group{
-		name:      name,
-		parent:    parent,
-		container: container,
-		ctx:       ctx,
-		invokers:  []interface{}{},
+		name:     name,
+		parent:   parent,
+		c:        c,
+		ctx:      ctx,
+		invokers: []interface{}{},
 	}
 
 	// Provide the context if we are the root group
 	if grp.parent == nil {
-		grp.container.Provide(func() Context {
+		grp.c.add(func() Context {
 			return grp.ctx
 		})
 	}
@@ -44,27 +42,23 @@ func NewGroup(name string, parent *Group) *Group {
 
 // AddService adds a new service constructor to the service group.
 func (g *Group) AddService(ctr interface{}) error {
-	// add the service constructor to the container
-	if e := g.container.Provide(ctr); e != nil {
-		return e
-	}
+	vf := func(v reflect.Value) {
 
-	// Invoke the constructor to force the object creation,
-	// this makes sure that all dependent objects are already
-	// added to this group or the ancestor group.
-	return g.container.Invoke(ctr)
+	}
+	// add the service constructor to the container
+	return g.c.addWithProcessValue(ctr, vf)
 }
 
 // Invoke invokes a function with dependency injection.
 func (g *Group) Invoke(f interface{}) error {
-	return g.container.Invoke(f)
+	return g.c.invoke(f)
 }
 
 // Configure calls the configure hooks on all services registered for configuration.
 func (g *Group) Configure() error {
 	for _, h := range g.ctx.hooks {
 		if h.ConfigHook != nil {
-			if err := g.container.Invoke(h.ConfigHook); err != nil {
+			if err := g.c.invoke(h.ConfigHook); err != nil {
 				return err
 			}
 		}
@@ -78,7 +72,7 @@ func (g *Group) Configure() error {
 func (g *Group) Start() error {
 	for i, h := range g.ctx.hooks {
 		if h.StartHook != nil {
-			if err := g.container.Invoke(h.StartHook); err != nil {
+			if err := g.c.invoke(h.StartHook); err != nil {
 				defer g.stop(i + 1)
 				return err
 			}
@@ -98,7 +92,7 @@ func (g *Group) stop(index int) error {
 		i--
 		h := g.ctx.hooks[i]
 		if h.StopHook != nil {
-			if err := g.container.Invoke(h.StopHook); err != nil {
+			if err := g.c.invoke(h.StopHook); err != nil {
 				return err
 			}
 		}
