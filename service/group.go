@@ -43,23 +43,16 @@ func NewGroup(name string, parent *Group) *Group {
 }
 
 // AddService adds a new service constructor to the service group.
-func (g *Group) AddService(ctr interface{}, invoker interface{}) error {
-	if invoker != nil {
-		g.invokers = append(g.invokers, invoker)
-	}
+func (g *Group) AddService(ctr interface{}) error {
 	// add the service constructor to the container
-	return g.container.Provide(ctr)
-}
-
-// Create creates the leaf level services, that bootstraps the service group
-func (g *Group) Create() error {
-	for _, inv := range g.invokers {
-		if err := g.container.Invoke(inv); err != nil {
-			return err
-		}
+	if e := g.container.Provide(ctr); e != nil {
+		return e
 	}
 
-	return nil
+	// Invoke the constructor to force the object creation,
+	// this makes sure that all dependent objects are already
+	// added to this group or the ancestor group.
+	return g.container.Invoke(ctr)
 }
 
 // Invoke invokes a function with dependency injection.
