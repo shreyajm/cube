@@ -34,7 +34,6 @@ func (s *sigH) Sig(i int) os.Signal {
 
 func TestSignals(t *testing.T) {
 	Convey("Create a signal Router", t, func() {
-		ctx := service.NewContext()
 		s := NewSignalRouter()
 		So(s, ShouldNotBeNil)
 		Convey("Should be able add handler", func() {
@@ -54,30 +53,37 @@ func TestSignals(t *testing.T) {
 		})
 
 		Convey("Should be able to start the service", func() {
-			sh := &sigH{[]os.Signal{}, &sync.RWMutex{}}
-			s.Handle(syscall.SIGINT, sh.handle)
-			So(s.IsHandled(syscall.SIGINT), ShouldBeTrue)
-			So(len(sh.s), ShouldEqual, 0)
-			// Check lifecycle
-			So(s.(service.HealthHook).IsHealthy(ctx), ShouldBeFalse)
-			s.(service.StartHook).Start(ctx)
-			So(s.(service.HealthHook).IsHealthy(ctx), ShouldBeTrue)
+			grp := service.NewGroup("signal_test", nil)
+			So(grp.AddService(NewSignalRouter), ShouldBeNil)
 
-			Convey("Should be able to handle a signal", func() {
-				// Fire a signal
-				s.(*router).signalCh <- syscall.SIGINT
+			grp.Invoke(func(s Router) {
+				sh := &sigH{[]os.Signal{}, &sync.RWMutex{}}
+				s.Handle(syscall.SIGINT, sh.handle)
+				So(s.IsHandled(syscall.SIGINT), ShouldBeTrue)
+				So(len(sh.s), ShouldEqual, 0)
 
-				// Sleep for a second
-				time.Sleep(time.Second)
-				So(sh.Len(), ShouldEqual, 1)
-				So(sh.Sig(0), ShouldEqual, syscall.SIGINT)
-			})
+				// Check lifecycle
+				So(grp.IsHealthy(), ShouldBeFalse)
+				So(grp.Configure(), ShouldBeNil)
+				So(grp.Start(), ShouldBeNil)
+				So(grp.IsHealthy(), ShouldBeTrue)
 
-			Convey("Should be able to stop the service", func() {
-				So(s.(service.HealthHook).IsHealthy(ctx), ShouldBeTrue)
-				ctx.Shutdown()
-				time.Sleep(time.Second)
-				So(s.(service.HealthHook).IsHealthy(ctx), ShouldBeFalse)
+				Convey("Should be able to handle a signal", func() {
+					// Fire a signal
+					s.(*router).signalCh <- syscall.SIGINT
+
+					// Sleep for a second
+					time.Sleep(time.Second)
+					So(sh.Len(), ShouldEqual, 1)
+					So(sh.Sig(0), ShouldEqual, syscall.SIGINT)
+				})
+
+				Convey("Should be able to stop the service", func() {
+					So(grp.IsHealthy(), ShouldBeTrue)
+					So(grp.Stop(), ShouldBeNil)
+					time.Sleep(time.Second)
+					So(grp.IsHealthy(), ShouldBeFalse)
+				})
 			})
 		})
 	})

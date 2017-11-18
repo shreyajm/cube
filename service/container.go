@@ -81,11 +81,8 @@ type valueProcessor func(reflect.Value)
 // add invokes the constructor and calls the value processor on each
 // object the constructor produced.
 func (c *container) add(ctr interface{}, vf valueProcessor) error {
-	return c.invokeAndProcess(ctr, func(returned []reflect.Value) error {
-		if e := checkError(returned); e != nil {
-			return e
-		}
-
+	// Cache all the results and invoke the value processor on each
+	resProc := func(returned []reflect.Value) error {
 		for _, v := range returned {
 			if e := c.put(v); e != nil {
 				return e
@@ -96,7 +93,8 @@ func (c *container) add(ctr interface{}, vf valueProcessor) error {
 			}
 		}
 		return nil
-	})
+	}
+	return c.invokeAndProcess(ctr, resProc)
 }
 
 // buildArgs builds the arguments required by the constructor by looking
@@ -118,12 +116,19 @@ func (c *container) buildArgs(ctrType reflect.Type) ([]reflect.Value, error) {
 	return vals, nil
 }
 
+var ctxType = reflect.TypeOf(newContext(nil, nil))
+var shutType = reflect.TypeOf(Shutdown(func() {}))
+
+func (c *container) checkParent(in reflect.Type) bool {
+	return in != ctxType && in != shutType && c.parent != nil
+}
+
 // get finds a object required by buildArgs. It looks up the parent
 // container first for the object and then the object table of this
 // container.
 func (c *container) get(in reflect.Type) (reflect.Value, error) {
 	// Always find the value in the parent type first.
-	if c.parent != nil {
+	if c.checkParent(in) {
 		v, err := c.parent.get(in)
 
 		// We found the value in our ancestry, so return that value.

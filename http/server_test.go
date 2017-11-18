@@ -22,6 +22,15 @@ func newConfigStore() config.Store {
 	return config.NewJSONStore(r)
 }
 
+func newBadConfig() config.Store {
+	r := strings.NewReader(fmt.Sprintf(`{"httpx": {"portd": %d}}`, port))
+	return config.NewJSONStore(r)
+}
+func newBadPort() config.Store {
+	r := strings.NewReader(`{"http": {"port": -1}}`)
+	return config.NewJSONStore(r)
+}
+
 type testHandler struct{}
 
 func (th testHandler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
@@ -57,5 +66,30 @@ func TestHTTPServer(t *testing.T) {
 		// Stop the group
 		So(grp.Stop(), ShouldBeNil)
 		So(grp.IsHealthy(), ShouldBeFalse)
+	})
+}
+
+func TestBadConfig(t *testing.T) {
+	Convey("http server with bad config", t, func() {
+		grp := service.NewGroup("http", nil)
+		So(grp.AddService(newBadConfig), ShouldBeNil)
+		So(grp.Invoke(func(s config.Store) error {
+			return s.Open()
+		}), ShouldBeNil)
+		So(grp.AddService(New), ShouldBeNil)
+		So(grp.Configure(), ShouldNotBeNil)
+	})
+}
+
+func TestBadPort(t *testing.T) {
+	Convey("http server with bad port", t, func() {
+		grp := service.NewGroup("http", nil)
+		So(grp.AddService(newBadPort), ShouldBeNil)
+		So(grp.Invoke(func(s config.Store) error {
+			return s.Open()
+		}), ShouldBeNil)
+		So(grp.AddService(New), ShouldBeNil)
+		So(grp.Configure(), ShouldBeNil)
+		So(grp.Start(), ShouldNotBeNil)
 	})
 }

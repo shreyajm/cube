@@ -4,6 +4,7 @@ import (
 	"reflect"
 
 	"github.com/anuvu/cube/config"
+	"github.com/anuvu/zlog"
 )
 
 // ConfigHook is the interface that provides the configuration call back for the service.
@@ -30,6 +31,7 @@ type HealthHook interface {
 type Group struct {
 	name        string
 	parent      *Group
+	children    map[string]*Group
 	c           *container
 	ctx         *srvCtx
 	configHooks []ConfigHook
@@ -43,16 +45,18 @@ type Group struct {
 func NewGroup(name string, parent *Group) *Group {
 	var c *container
 	var ctx *srvCtx
+	log := zlog.New(name)
 	if parent == nil {
 		c = newContainer(nil)
-		ctx = newContext()
+		ctx = newContext(nil, log)
 	} else {
 		c = newContainer(parent.c)
-		ctx = parent.ctx
+		ctx = newContext(parent.ctx, log)
 	}
 	grp := &Group{
 		name:        name,
 		parent:      parent,
+		children:    map[string]*Group{},
 		c:           c,
 		ctx:         ctx,
 		configHooks: []ConfigHook{},
@@ -60,13 +64,15 @@ func NewGroup(name string, parent *Group) *Group {
 		stopHooks:   []StopHook{},
 		healthHooks: []HealthHook{},
 	}
-
-	// Provide the context if we are the root group
-	if grp.parent == nil {
-		grp.c.add(func() Context {
-			return grp.ctx
-		}, nil)
+	if parent != nil {
+		// FIXME: Potential child name collision, check for it.
+		parent.children[name] = grp
 	}
+
+	// Provide the context and shutdown func
+	grp.c.add(func() Context { return grp.ctx }, nil)
+	grp.c.add(func() Shutdown { return grp.ctx.Shutdown }, nil)
+
 	return grp
 }
 
@@ -103,6 +109,13 @@ func (g *Group) Configure() error {
 			return err
 		}
 	}
+
+	// Configure all the child groups.
+	for _, child := range g.children {
+		if err := child.Configure(); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
@@ -119,17 +132,36 @@ func (g *Group) Start() error {
 			return err
 		}
 	}
+
+	// Start all the child groups
+	for _, child := range g.children {
+		if err := child.Start(); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
 // Stop calls the stop hooks on all services registered for shutdown.
 func (g *Group) Stop() error {
 	var e error
+
+	// Stop all the child groups first
+	for _, child := range g.children {
+		e = child.Stop()
+	}
+
+	// Signal all async services in this group to stop
+	g.ctx.Shutdown()
+
 	// Invoke the stop hooks in the reverse dependency order
-	for _, h := range g.stopHooks {
-		if err := g.c.invoke(h.Stop); err != nil {
-			// FIXME: We need to make this multi-error
-			e = err
+	if len(g.stopHooks) > 0 {
+		for i := len(g.stopHooks) - 1; i == 0; i-- {
+			h := g.stopHooks[i]
+			if err := g.c.invoke(h.Stop); err != nil {
+				// FIXME: We need to make this multi-error
+				e = err
+			}
 		}
 	}
 	return e
@@ -139,6 +171,12 @@ func (g *Group) Stop() error {
 func (g *Group) IsHealthy() bool {
 	for _, h := range g.healthHooks {
 		if !h.IsHealthy(g.ctx) {
+			return false
+		}
+	}
+
+	for _, child := range g.children {
+		if !child.IsHealthy() {
 			return false
 		}
 	}
