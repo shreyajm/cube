@@ -34,7 +34,8 @@ func (s *sigH) Sig(i int) os.Signal {
 
 func TestSignals(t *testing.T) {
 	Convey("Create a signal Router", t, func() {
-		s := NewSignalRouter(service.NewContext())
+		ctx := service.NewContext()
+		s := NewSignalRouter()
 		So(s, ShouldNotBeNil)
 		Convey("Should be able add handler", func() {
 			So(s.IsIgnored(syscall.SIGINT), ShouldBeFalse)
@@ -58,9 +59,9 @@ func TestSignals(t *testing.T) {
 			So(s.IsHandled(syscall.SIGINT), ShouldBeTrue)
 			So(len(sh.s), ShouldEqual, 0)
 			// Check lifecycle
-			So(IsHealthy(s), ShouldBeFalse)
-			StartRouter(s)
-			So(IsHealthy(s), ShouldBeTrue)
+			So(s.(service.HealthHook).IsHealthy(ctx), ShouldBeFalse)
+			s.(service.StartHook).Start(ctx)
+			So(s.(service.HealthHook).IsHealthy(ctx), ShouldBeTrue)
 
 			Convey("Should be able to handle a signal", func() {
 				// Fire a signal
@@ -73,10 +74,10 @@ func TestSignals(t *testing.T) {
 			})
 
 			Convey("Should be able to stop the service", func() {
-				So(IsHealthy(s), ShouldBeTrue)
-				So(StopRouter(s), ShouldBeNil)
+				So(s.(service.HealthHook).IsHealthy(ctx), ShouldBeTrue)
+				ctx.Shutdown()
 				time.Sleep(time.Second)
-				So(IsHealthy(s), ShouldBeFalse)
+				So(s.(service.HealthHook).IsHealthy(ctx), ShouldBeFalse)
 			})
 		})
 	})

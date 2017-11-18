@@ -4,18 +4,21 @@ import (
 	"flag"
 	"os"
 
+	"github.com/anuvu/cube/config"
 	"github.com/anuvu/cube/service"
 )
 
-// NewCli is the CLI service constructor
-func NewCli(ctx service.Context) *flag.FlagSet {
-	flagSet := flag.NewFlagSet("cube", flag.ExitOnError)
+// Cli wraps flags.
+type Cli struct {
+	Flags *flag.FlagSet
+}
 
-	ctx.AddLifecycle(&service.Lifecycle{
-		ConfigHook: func() {
-			flagSet.Parse(os.Args[1:])
-		},
-	})
+// New returns new instance of Cli.
+func New() *Cli {
+	return &Cli{flag.NewFlagSet(os.Args[0], flag.ExitOnError)}
+}
 
-	return flagSet
+// Configure parses the flags.
+func (c *Cli) Configure(ctx service.Context, store config.Store) error {
+	return c.Flags.Parse(os.Args[1:])
 }

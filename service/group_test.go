@@ -2,10 +2,18 @@ package service
 
 import (
 	"fmt"
+	"strings"
 	"testing"
 
+	"github.com/anuvu/cube/config"
 	. "github.com/smartystreets/goconvey/convey"
 )
+
+func newConfigStore() config.Store {
+	r := strings.NewReader(`{"http": {"port": 8080}}
+		{"logger": {"file": "/var/log/test.log"}}`)
+	return config.NewJSONStore(r)
+}
 
 type svc struct {
 	startCalled     bool
@@ -16,37 +24,44 @@ type svc struct {
 type svcWithHooks svc
 
 func newSvcWithHooks(ctx Context) *svcWithHooks {
-	s := &svcWithHooks{}
-	ctx.AddLifecycle(&Lifecycle{
-		ConfigHook: func(svc *svcWithHooks) { svc.configureCalled = true },
-		StartHook:  func(svc *svcWithHooks) { svc.startCalled = true },
-		StopHook:   func(svc *svcWithHooks) { svc.stopCalled = true },
-		HealthHook: func() bool { return s.startCalled && !s.stopCalled },
-	})
-	return s
+	return &svcWithHooks{false, false, false}
 }
+
+func (svc *svcWithHooks) Configure(ctx Context, store config.Store) error {
+	svc.configureCalled = true
+	return nil
+}
+func (svc *svcWithHooks) Start(ctx Context) error {
+	svc.startCalled = true
+	return nil
+}
+func (svc *svcWithHooks) Stop(ctx Context) error {
+	svc.stopCalled = true
+	return nil
+}
+
+func (svc *svcWithHooks) IsHealthy(ctx Context) bool { return svc.startCalled && !svc.stopCalled }
 
 type svcWithErrors svc
 
 func newSvcWithErrors(ctx Context) *svcWithErrors {
-	s := &svcWithErrors{}
-	ctx.AddLifecycle(&Lifecycle{
-		ConfigHook: func(svc *svcWithErrors) error {
-			svc.configureCalled = true
-			return fmt.Errorf("config error")
-		},
-		StartHook: func(svc *svcWithErrors) error {
-			svc.startCalled = true
-			return fmt.Errorf("start error")
-		},
-		StopHook: func(svc *svcWithErrors) error {
-			svc.stopCalled = true
-			return fmt.Errorf("stop error")
-		},
-		HealthHook: func() bool { return s.startCalled && !s.stopCalled },
-	})
-	return s
+	return &svcWithErrors{}
 }
+
+func (svc *svcWithErrors) Configure(ctx Context, store config.Store) error {
+	svc.configureCalled = true
+	return fmt.Errorf("config error")
+}
+func (svc *svcWithErrors) Start(ctx Context) error {
+	svc.startCalled = true
+	return fmt.Errorf("config error")
+}
+func (svc *svcWithErrors) Stop(ctx Context) error {
+	svc.stopCalled = true
+	return fmt.Errorf("config error")
+}
+
+func (svc *svcWithErrors) IsHealthy(ctx Context) bool { return svc.startCalled && !svc.stopCalled }
 
 func TestGroup(t *testing.T) {
 	Convey("After we create a group", t, func() {
@@ -54,6 +69,7 @@ func TestGroup(t *testing.T) {
 		So(grp, ShouldNotBeNil)
 		So(grp.parent, ShouldBeNil)
 		So(grp.ctx, ShouldNotBeNil)
+		So(grp.AddService(newConfigStore), ShouldBeNil)
 
 		Convey("we should be able to add a service with no hooks", func() {
 			So(grp.AddService(func(ctx Context) *svc { return &svc{} }), ShouldBeNil)
@@ -122,6 +138,7 @@ func TestGroupHierarchy(t *testing.T) {
 	Convey("Create the root group", t, func() {
 		root := NewGroup("root", nil)
 		So(root, ShouldNotBeNil)
+		So(root.AddService(newConfigStore), ShouldBeNil)
 		Convey("create a sub group", func() {
 			grp := NewGroup("test", root)
 			So(grp, ShouldNotBeNil)

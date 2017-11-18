@@ -4,21 +4,6 @@ import (
 	"context"
 )
 
-// Lifecycle captures the service lifecycle hooks.
-type Lifecycle struct {
-	// Service configure hook, must be a function
-	ConfigHook interface{}
-
-	// Service Start hook, must be a function
-	StartHook interface{}
-
-	// Service Stop hook, must be a function
-	StopHook interface{}
-
-	// Service health hook
-	HealthHook func() bool
-}
-
 // Context provides a wrapper interface for go context.
 //
 // Ctx() returns the underlying go context.
@@ -29,7 +14,6 @@ type Lifecycle struct {
 type Context interface {
 	Ctx() context.Context
 	Shutdown()
-	AddLifecycle(*Lifecycle)
 }
 
 // NewContext creates a new service context.
@@ -43,14 +27,12 @@ func newContext() *srvCtx {
 	return &srvCtx{
 		ctx:        ctx,
 		cancelFunc: cancelFunc,
-		hooks:      []*Lifecycle{},
 	}
 }
 
 type srvCtx struct {
 	ctx        context.Context
 	cancelFunc context.CancelFunc
-	hooks      []*Lifecycle
 }
 
 func (sc *srvCtx) Ctx() context.Context {
@@ -59,8 +41,4 @@ func (sc *srvCtx) Ctx() context.Context {
 
 func (sc *srvCtx) Shutdown() {
 	sc.cancelFunc()
-}
-
-func (sc *srvCtx) AddLifecycle(lc *Lifecycle) {
-	sc.hooks = append(sc.hooks, lc)
 }

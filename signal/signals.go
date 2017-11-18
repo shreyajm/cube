@@ -39,23 +39,15 @@ type router struct {
 }
 
 // NewSignalRouter returns a signal router.
-func NewSignalRouter(ctx service.Context) Router {
-    r := &router{
+func NewSignalRouter() Router {
+	r := &router{
 		signalCh:   make(chan os.Signal),
 		signals:    make(map[os.Signal]Handler),
 		ignSignals: make(map[os.Signal]struct{}),
-		ctx:        ctx,
 		running:    false,
 		lock:       &sync.RWMutex{},
 	}
-    // Hooking Signal Router to the ctx
-    ctx.AddLifecycle(&service.Lifecycle{
-        StartHook: StartRouter,
-        StopHook: StopRouter,
-        ConfigHook: nil,
-        HealthHook: func() bool { return IsHealthy(r) },
-    })
-    return r
+	return r
 }
 
 func (s *router) Handle(sig os.Signal, h Handler) {
@@ -96,8 +88,7 @@ func (s *router) IsIgnored(sig os.Signal) bool {
 }
 
 // StartRouter starts the signal router and listens for registered signals.
-func StartRouter(r Router) error {
-	s := r.(*router)
+func (s *router) Start(ctx service.Context) error {
 	go func() {
 		defer func() {
 			s.lock.Lock()
@@ -107,7 +98,7 @@ func StartRouter(r Router) error {
 		// This go routine dies with the server
 		for {
 			select {
-			case <-s.ctx.Ctx().Done():
+			case <-ctx.Ctx().Done():
 				// We are done exit.
 				return
 			case sig := <-s.signalCh:
@@ -127,16 +118,8 @@ func StartRouter(r Router) error {
 	return nil
 }
 
-// StopRouter stops the service router.
-func StopRouter(r Router) error {
-	s := r.(*router)
-	s.ctx.Shutdown()
-	return nil
-}
-
 // IsHealthy returns true if the router is running, else false.
-func IsHealthy(r Router) bool {
-	s := r.(*router)
+func (s *router) IsHealthy(ctx service.Context) bool {
 	s.lock.RLock()
 	defer s.lock.RUnlock()
 	return s.running

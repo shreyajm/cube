@@ -1,6 +1,5 @@
 package: github.com/anuvu/cube
 import:
 - package: github.com/anuvu/zlog
-- package: github.com/anuvu/dig
 testImport:
 - package: github.com/smartystreets/goconvey/convey

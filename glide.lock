@@ -1,8 +1,6 @@
-hash: 7f145ad124cba2dac7c5374955fb0c202902d4c8004bab65831c0aad29cc39f5
-updated: 2017-11-15T13:33:40.000654-08:00
+hash: 36e55a4f0d99512271f5ca9710d6cfc005909f0f615713c6156ba694c8a9a56a
+updated: 2017-11-17T16:24:04.40354-08:00
 imports:
-- name: github.com/anuvu/dig
-  version: 97f1ec340a2c051e192a1a05edb3629dfc2e7542
 - name: github.com/anuvu/zlog
   version: ff66b04dc983fbecb5f3e0dc7d80e74c69984035
 testImports:
