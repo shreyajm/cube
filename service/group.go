@@ -65,7 +65,7 @@ func NewGroup(name string, parent *Group) *Group {
 	if grp.parent == nil {
 		grp.c.add(func() Context {
 			return grp.ctx
-		})
+		}, nil)
 	}
 	return grp
 }
@@ -88,7 +88,7 @@ func (g *Group) AddService(ctr interface{}) error {
 		}
 	}
 	// add the service constructor to the container
-	return g.c.addWithProcessValue(ctr, vf)
+	return g.c.add(ctr, vf)
 }
 
 // Invoke invokes a function with dependency injection.

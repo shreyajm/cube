@@ -2,6 +2,8 @@ package service
 
 import (
 	"context"
+
+	"github.com/anuvu/zlog"
 )
 
 // Context provides a wrapper interface for go context.
@@ -14,6 +16,7 @@ import (
 type Context interface {
 	Ctx() context.Context
 	Shutdown()
+	Log() zlog.Logger
 }
 
 // NewContext creates a new service context.
@@ -27,12 +30,14 @@ func newContext() *srvCtx {
 	return &srvCtx{
 		ctx:        ctx,
 		cancelFunc: cancelFunc,
+		log:        zlog.New("cube"),
 	}
 }
 
 type srvCtx struct {
 	ctx        context.Context
 	cancelFunc context.CancelFunc
+	log        zlog.Logger
 }
 
 func (sc *srvCtx) Ctx() context.Context {
@@ -41,4 +46,8 @@ func (sc *srvCtx) Ctx() context.Context {
 
 func (sc *srvCtx) Shutdown() {
 	sc.cancelFunc()
+}
+
+func (sc *srvCtx) Log() zlog.Logger {
+	return sc.log
 }

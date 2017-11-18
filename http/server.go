@@ -16,21 +16,21 @@ type Service interface {
 }
 
 type server struct {
-	config  *Config
+	config  *configuration
 	mux     *http.ServeMux
 	server  http.Server
 	running int32
 }
 
-// Config defines the configurable parameters of http service
-type Config struct {
+// configuration defines the configurable parameters of http service
+type configuration struct {
 	// Listen port
 	Port int `json:"port"`
 }
 
 // New creates a new HTTP Service
 func New(ctx service.Context) Service {
-	return &server{config: &Config{}, mux: http.NewServeMux()}
+	return &server{config: &configuration{}, mux: http.NewServeMux()}
 }
 
 func (s *server) Register(url string, h http.Handler) {
@@ -45,15 +45,16 @@ func (s *server) Configure(ctx service.Context, store config.Store) error {
 }
 
 func (s *server) Start(ctx service.Context) error {
-	s.server = http.Server{Addr: fmt.Sprintf("localhost:%d", s.config.Port), Handler: s.mux}
-	l, err := net.Listen("tcp", fmt.Sprintf("localhost:%d", s.config.Port))
+	addr := fmt.Sprintf("localhost:%d", s.config.Port)
+	s.server = http.Server{Addr: addr, Handler: s.mux}
+	l, err := net.Listen("tcp", addr)
 	if err != nil {
 		return err
 	}
+	atomic.AddInt32(&s.running, 1)
 	go func() {
-		atomic.AddInt32(&s.running, 1)
 		if err := s.server.Serve(l); err != nil {
-			fmt.Printf("serve stopping: %v\n", err)
+			ctx.Log().Info().Error(err).Msg("serve stopping")
 		}
 	}()
 	return nil
