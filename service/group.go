@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"reflect"
 
 	"github.com/anuvu/cube/config"
@@ -27,6 +28,9 @@ type HealthHook interface {
 	IsHealthy(ctx Context) bool
 }
 
+// ServerShutdown invokes the server shutdown sequence.
+type ServerShutdown context.CancelFunc
+
 // Group is a group of services, that have inter-dependencies.
 type Group struct {
 	name        string
@@ -45,13 +49,18 @@ type Group struct {
 func NewGroup(name string, parent *Group) *Group {
 	var c *container
 	var ctx *srvCtx
+	var shut ServerShutdown
 	log := zlog.New(name)
 	if parent == nil {
 		c = newContainer(nil)
 		ctx = newContext(nil, log)
+		shut = ServerShutdown(ctx.cancelFunc)
 	} else {
 		c = newContainer(parent.c)
 		ctx = newContext(parent.ctx, log)
+
+		// This forces the root cancel func to be returned
+		shut = ServerShutdown(parent.ctx.cancelFunc)
 	}
 	grp := &Group{
 		name:        name,
@@ -67,9 +76,12 @@ func NewGroup(name string, parent *Group) *Group {
 	if parent != nil {
 		// FIXME: Potential child name collision, check for it.
 		parent.children[name] = grp
+	} else {
+		// Root container should provide the server shutdown function
+		grp.c.add(func() ServerShutdown { return shut }, nil)
 	}
 
-	// Provide the context and shutdown func
+	// Provide the Context, Shutdown per group
 	grp.c.add(func() Context { return grp.ctx }, nil)
 	grp.c.add(func() Shutdown { return grp.ctx.Shutdown }, nil)
 
@@ -104,6 +116,7 @@ func (g *Group) Invoke(f interface{}) error {
 
 // Configure calls the configure hooks on all services registered for configuration.
 func (g *Group) Configure() error {
+	g.ctx.Log().Info().Msg("configuring group")
 	for _, h := range g.configHooks {
 		if err := g.c.invoke(h.Configure); err != nil {
 			return err
@@ -123,6 +136,7 @@ func (g *Group) Configure() error {
 // If an error occurs on any hook, subsequent start calls are abandoned
 // and a best effort stop is initiated.
 func (g *Group) Start() error {
+	g.ctx.Log().Info().Msg("starting group")
 	for _, h := range g.startHooks {
 		if err := g.c.invoke(h.Start); err != nil {
 			// We need to call all stop hooks and ignore errors
@@ -151,8 +165,7 @@ func (g *Group) Stop() error {
 		e = child.Stop()
 	}
 
-	// Signal all async services in this group to stop
-	g.ctx.Shutdown()
+	g.ctx.Log().Info().Msg("stopping group")
 
 	// Invoke the stop hooks in the reverse dependency order
 	if len(g.stopHooks) > 0 {

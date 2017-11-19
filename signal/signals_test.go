@@ -80,7 +80,9 @@ func TestSignals(t *testing.T) {
 
 				Convey("Should be able to stop the service", func() {
 					So(grp.IsHealthy(), ShouldBeTrue)
-					So(grp.Stop(), ShouldBeNil)
+					grp.Invoke(func(sf service.Shutdown) {
+						sf()
+					})
 					time.Sleep(time.Second)
 					So(grp.IsHealthy(), ShouldBeFalse)
 				})

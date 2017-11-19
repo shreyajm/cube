@@ -185,5 +185,23 @@ func TestGroupHierarchy(t *testing.T) {
 				})
 			})
 		})
+		Convey("check for unique contexts", func() {
+			var baseCtx Context
+			var derivedCtx Context
+			// Capture the base context
+			root.Invoke(func(ctx Context) {
+				baseCtx = ctx
+				So(ctx, ShouldNotBeNil)
+			})
+
+			// Capture the derived context
+			grp.Invoke(func(ctx Context) {
+				derivedCtx = ctx
+				So(ctx, ShouldNotBeNil)
+			})
+
+			// Assert that base and derived contexts are not equal
+			So(baseCtx, ShouldNotEqual, derivedCtx)
+		})
 	})
 }

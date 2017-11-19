@@ -116,7 +116,7 @@ func (c *container) buildArgs(ctrType reflect.Type) ([]reflect.Value, error) {
 	return vals, nil
 }
 
-var ctxType = reflect.TypeOf(newContext(nil, nil))
+var ctxType = reflect.TypeOf((*Context)(nil)).Elem()
 var shutType = reflect.TypeOf(Shutdown(func() {}))
 
 func (c *container) checkParent(in reflect.Type) bool {
