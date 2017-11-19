@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"sync/atomic"
 
 	"github.com/anuvu/cube/config"
 	"github.com/anuvu/cube/service"
@@ -15,64 +16,55 @@ type Service interface {
 }
 
 type server struct {
-	port int
-	mux  *http.ServeMux
-	server http.Server
-	running bool
+	config  *configuration
+	mux     *http.ServeMux
+	server  http.Server
+	running int32
 }
 
-// NewService creates a new HTTP Service
-func NewService(ctx service.Context) Service {
-	s := &server{mux: http.NewServeMux()}
-	ctx.AddLifecycle(s.getLifecycle())
-	return s
+// configuration defines the configurable parameters of http service
+type configuration struct {
+	// Listen port
+	Port int `json:"port"`
+}
+
+// New creates a new HTTP Service
+func New(ctx service.Context) Service {
+	return &server{config: &configuration{}, mux: http.NewServeMux()}
 }
 
 func (s *server) Register(url string, h http.Handler) {
 	s.mux.Handle(url, h)
 }
 
-func (s *server) getLifecycle() *service.Lifecycle {
-	return &service.Lifecycle {
-		ConfigHook: s.ConfigHook,
-		StartHook: s.StartHook,
-		StopHook: s.StopHook,
-		HealthHook: s.HealthHook,
-	}
-}
-
-func (s *server) ConfigHook(store config.Store) error {
-	if err := store.Get("httpPort", &s.port); err != nil {
+func (s *server) Configure(ctx service.Context, store config.Store) error {
+	if err := store.Get("http", s.config); err != nil {
 		return err
 	}
-
 	return nil
 }
 
-func (s *server) StartHook() error {
-	s.server = http.Server{Addr: fmt.Sprintf("localhost:%d", s.port), Handler: s.mux}
-	started := make(chan bool)
+func (s *server) Start(ctx service.Context) error {
+	addr := fmt.Sprintf("localhost:%d", s.config.Port)
+	s.server = http.Server{Addr: addr, Handler: s.mux}
+	l, err := net.Listen("tcp", addr)
+	if err != nil {
+		return err
+	}
+	atomic.AddInt32(&s.running, 1)
 	go func() {
-		l, err := net.Listen("tcp", fmt.Sprintf("localhost:%d", s.port))
-		started <- true
-		if err != nil {
-			fmt.Println("failed to listen\n");
-			return
-		}
-		s.running = true
 		if err := s.server.Serve(l); err != nil {
-			fmt.Println("serve failed %v", err)
+			ctx.Log().Info().Error(err).Msg("serve stopping")
 		}
-		s.running = false
 	}()
-	<-started
 	return nil
 }
 
-func (s *server) StopHook() error {
+func (s *server) Stop(ctx service.Context) error {
+	atomic.AddInt32(&s.running, -1)
 	return s.server.Close()
 }
 
-func (s *server) HealthHook() bool {
-	return s.running
+func (s *server) IsHealthy(ctx service.Context) bool {
+	return atomic.LoadInt32(&s.running) > 0
 }

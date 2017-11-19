@@ -1,10 +1,12 @@
-hash: 7f145ad124cba2dac7c5374955fb0c202902d4c8004bab65831c0aad29cc39f5
-updated: 2017-11-15T13:33:40.000654-08:00
+hash: 36e55a4f0d99512271f5ca9710d6cfc005909f0f615713c6156ba694c8a9a56a
+updated: 2017-11-17T16:46:59.878587-08:00
 imports:
-- name: github.com/anuvu/dig
-  version: 97f1ec340a2c051e192a1a05edb3629dfc2e7542
 - name: github.com/anuvu/zlog
   version: ff66b04dc983fbecb5f3e0dc7d80e74c69984035
+- name: github.com/rs/zerolog
+  version: 9d194eb6f50e8718a6d6f8f1e1f0bf3ddf4065f1
+  subpackages:
+  - internal/json
 testImports:
 - name: github.com/gopherjs/gopherjs
   version: a0a7cfed7b2a54080888fd2b3d4a3ec14562c86c
