@@ -38,10 +38,7 @@ func (s *server) Register(url string, h http.Handler) {
 }
 
 func (s *server) Configure(ctx service.Context, store config.Store) error {
-	if err := store.Get("http", s.config); err != nil {
-		return err
-	}
-	return nil
+	return store.Get("http", s.config)
 }
 
 func (s *server) Start(ctx service.Context) error {

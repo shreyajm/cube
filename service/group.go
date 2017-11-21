@@ -1,9 +1,11 @@
 package service
 
 import (
+	"context"
 	"reflect"
 
 	"github.com/anuvu/cube/config"
+	"github.com/anuvu/zlog"
 )
 
 // ConfigHook is the interface that provides the configuration call back for the service.
@@ -26,10 +28,14 @@ type HealthHook interface {
 	IsHealthy(ctx Context) bool
 }
 
+// ServerShutdown invokes the server shutdown sequence.
+type ServerShutdown context.CancelFunc
+
 // Group is a group of services, that have inter-dependencies.
 type Group struct {
 	name        string
 	parent      *Group
+	children    map[string]*Group
 	c           *container
 	ctx         *srvCtx
 	configHooks []ConfigHook
@@ -43,16 +49,23 @@ type Group struct {
 func NewGroup(name string, parent *Group) *Group {
 	var c *container
 	var ctx *srvCtx
+	var shut ServerShutdown
+	log := zlog.New(name)
 	if parent == nil {
 		c = newContainer(nil)
-		ctx = newContext()
+		ctx = newContext(nil, log)
+		shut = ServerShutdown(ctx.cancelFunc)
 	} else {
 		c = newContainer(parent.c)
-		ctx = parent.ctx
+		ctx = newContext(parent.ctx, log)
+
+		// This forces the root cancel func to be returned
+		shut = ServerShutdown(parent.ctx.cancelFunc)
 	}
 	grp := &Group{
 		name:        name,
 		parent:      parent,
+		children:    map[string]*Group{},
 		c:           c,
 		ctx:         ctx,
 		configHooks: []ConfigHook{},
@@ -60,13 +73,18 @@ func NewGroup(name string, parent *Group) *Group {
 		stopHooks:   []StopHook{},
 		healthHooks: []HealthHook{},
 	}
-
-	// Provide the context if we are the root group
-	if grp.parent == nil {
-		grp.c.add(func() Context {
-			return grp.ctx
-		}, nil)
+	if parent != nil {
+		// FIXME: Potential child name collision, check for it.
+		parent.children[name] = grp
+	} else {
+		// Root container should provide the server shutdown function
+		grp.c.add(func() ServerShutdown { return shut }, nil)
 	}
+
+	// Provide the Context, Shutdown per group
+	grp.c.add(func() Context { return grp.ctx }, nil)
+	grp.c.add(func() Shutdown { return grp.ctx.Shutdown }, nil)
+
 	return grp
 }
 
@@ -98,8 +116,16 @@ func (g *Group) Invoke(f interface{}) error {
 
 // Configure calls the configure hooks on all services registered for configuration.
 func (g *Group) Configure() error {
+	g.ctx.Log().Info().Msg("configuring group")
 	for _, h := range g.configHooks {
 		if err := g.c.invoke(h.Configure); err != nil {
+			return err
+		}
+	}
+
+	// Configure all the child groups.
+	for _, child := range g.children {
+		if err := child.Configure(); err != nil {
 			return err
 		}
 	}
@@ -110,6 +136,7 @@ func (g *Group) Configure() error {
 // If an error occurs on any hook, subsequent start calls are abandoned
 // and a best effort stop is initiated.
 func (g *Group) Start() error {
+	g.ctx.Log().Info().Msg("starting group")
 	for _, h := range g.startHooks {
 		if err := g.c.invoke(h.Start); err != nil {
 			// We need to call all stop hooks and ignore errors
@@ -119,17 +146,35 @@ func (g *Group) Start() error {
 			return err
 		}
 	}
+
+	// Start all the child groups
+	for _, child := range g.children {
+		if err := child.Start(); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
 // Stop calls the stop hooks on all services registered for shutdown.
 func (g *Group) Stop() error {
 	var e error
+
+	// Stop all the child groups first
+	for _, child := range g.children {
+		e = child.Stop()
+	}
+
+	g.ctx.Log().Info().Msg("stopping group")
+
 	// Invoke the stop hooks in the reverse dependency order
-	for _, h := range g.stopHooks {
-		if err := g.c.invoke(h.Stop); err != nil {
-			// FIXME: We need to make this multi-error
-			e = err
+	if len(g.stopHooks) > 0 {
+		for i := len(g.stopHooks) - 1; i == 0; i-- {
+			h := g.stopHooks[i]
+			if err := g.c.invoke(h.Stop); err != nil {
+				// FIXME: We need to make this multi-error
+				e = err
+			}
 		}
 	}
 	return e
@@ -139,6 +184,12 @@ func (g *Group) Stop() error {
 func (g *Group) IsHealthy() bool {
 	for _, h := range g.healthHooks {
 		if !h.IsHealthy(g.ctx) {
+			return false
+		}
+	}
+
+	for _, child := range g.children {
+		if !child.IsHealthy() {
 			return false
 		}
 	}

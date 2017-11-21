@@ -139,31 +139,69 @@ func TestGroupHierarchy(t *testing.T) {
 		root := NewGroup("root", nil)
 		So(root, ShouldNotBeNil)
 		So(root.AddService(newConfigStore), ShouldBeNil)
-		Convey("create a sub group", func() {
-			grp := NewGroup("test", root)
-			So(grp, ShouldNotBeNil)
-			Convey("we should be able to add service with hooks", func() {
-				So(grp.AddService(newSvcWithHooks), ShouldBeNil)
-				So(grp.IsHealthy(), ShouldBeFalse)
+		grp := NewGroup("test", root)
+		So(grp, ShouldNotBeNil)
+		Convey("we should be able to add service with hooks", func() {
+			So(grp.AddService(newSvcWithHooks), ShouldBeNil)
+			So(root.IsHealthy(), ShouldBeFalse)
 
-				grp.Invoke(func(s *svcWithHooks) {
-					Convey("we should be able to configure the group", func() {
-						So(grp.Configure(), ShouldBeNil)
-						So(s.configureCalled, ShouldBeTrue)
-						So(grp.IsHealthy(), ShouldBeFalse)
-					})
-					Convey("we should be able to start the group", func() {
-						So(grp.Start(), ShouldBeNil)
-						So(s.startCalled, ShouldBeTrue)
-						So(grp.IsHealthy(), ShouldBeTrue)
-					})
-					Convey("we should be able to stop the group", func() {
-						So(grp.Stop(), ShouldBeNil)
-						So(s.stopCalled, ShouldBeTrue)
-						So(grp.IsHealthy(), ShouldBeFalse)
-					})
+			grp.Invoke(func(s *svcWithHooks) {
+				Convey("we should be able to configure the group", func() {
+					So(root.Configure(), ShouldBeNil)
+					So(s.configureCalled, ShouldBeTrue)
+					So(root.IsHealthy(), ShouldBeFalse)
+				})
+				Convey("we should be able to start the group", func() {
+					So(root.Start(), ShouldBeNil)
+					So(s.startCalled, ShouldBeTrue)
+					So(root.IsHealthy(), ShouldBeTrue)
+				})
+				Convey("we should be able to stop the group", func() {
+					So(root.Stop(), ShouldBeNil)
+					So(s.stopCalled, ShouldBeTrue)
+					So(root.IsHealthy(), ShouldBeFalse)
 				})
 			})
+		})
+		Convey("check service with errors", func() {
+			So(grp.AddService(newSvcWithErrors), ShouldBeNil)
+			So(grp.IsHealthy(), ShouldBeFalse)
+			grp.Invoke(func(s *svcWithErrors) {
+				Convey("configure the group should be error", func() {
+					So(root.Configure(), ShouldNotBeNil)
+					So(s.configureCalled, ShouldBeTrue)
+					So(root.IsHealthy(), ShouldBeFalse)
+				})
+				Convey("start should be error", func() {
+					So(root.Start(), ShouldNotBeNil)
+					So(s.startCalled, ShouldBeTrue)
+					So(s.stopCalled, ShouldBeTrue)
+					So(root.IsHealthy(), ShouldBeFalse)
+				})
+				Convey("stop should be error", func() {
+					So(root.Stop(), ShouldNotBeNil)
+					So(s.stopCalled, ShouldBeTrue)
+					So(root.IsHealthy(), ShouldBeFalse)
+				})
+			})
+		})
+		Convey("check for unique contexts", func() {
+			var baseCtx Context
+			var derivedCtx Context
+			// Capture the base context
+			root.Invoke(func(ctx Context) {
+				baseCtx = ctx
+				So(ctx, ShouldNotBeNil)
+			})
+
+			// Capture the derived context
+			grp.Invoke(func(ctx Context) {
+				derivedCtx = ctx
+				So(ctx, ShouldNotBeNil)
+			})
+
+			// Assert that base and derived contexts are not equal
+			So(baseCtx, ShouldNotEqual, derivedCtx)
 		})
 	})
 }
