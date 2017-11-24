@@ -1,4 +1,4 @@
-package service
+package component
 
 import (
 	"fmt"
@@ -15,82 +15,82 @@ func newConfigStore() config.Store {
 	return config.NewJSONStore(r)
 }
 
-type svc struct {
+type cmp struct {
 	startCalled     bool
 	stopCalled      bool
 	configureCalled bool
 }
 
-type svcWithHooks svc
+type cmpWithHooks cmp
 
-func newSvcWithHooks(ctx Context) *svcWithHooks {
-	return &svcWithHooks{false, false, false}
+func newCmpWithHooks(ctx Context) *cmpWithHooks {
+	return &cmpWithHooks{false, false, false}
 }
 
-func (svc *svcWithHooks) Configure(ctx Context, store config.Store) error {
-	svc.configureCalled = true
+func (cmp *cmpWithHooks) Configure(ctx Context, store config.Store) error {
+	cmp.configureCalled = true
 	return nil
 }
-func (svc *svcWithHooks) Start(ctx Context) error {
-	svc.startCalled = true
+func (cmp *cmpWithHooks) Start(ctx Context) error {
+	cmp.startCalled = true
 	return nil
 }
-func (svc *svcWithHooks) Stop(ctx Context) error {
-	svc.stopCalled = true
+func (cmp *cmpWithHooks) Stop(ctx Context) error {
+	cmp.stopCalled = true
 	return nil
 }
 
-func (svc *svcWithHooks) IsHealthy(ctx Context) bool { return svc.startCalled && !svc.stopCalled }
+func (cmp *cmpWithHooks) IsHealthy(ctx Context) bool { return cmp.startCalled && !cmp.stopCalled }
 
-type svcWithErrors svc
+type cmpWithErrors cmp
 
-func newSvcWithErrors(ctx Context) *svcWithErrors {
-	return &svcWithErrors{}
+func newCmpWithErrors(ctx Context) *cmpWithErrors {
+	return &cmpWithErrors{}
 }
 
-func (svc *svcWithErrors) Configure(ctx Context, store config.Store) error {
-	svc.configureCalled = true
+func (cmp *cmpWithErrors) Configure(ctx Context, store config.Store) error {
+	cmp.configureCalled = true
 	return fmt.Errorf("config error")
 }
-func (svc *svcWithErrors) Start(ctx Context) error {
-	svc.startCalled = true
+func (cmp *cmpWithErrors) Start(ctx Context) error {
+	cmp.startCalled = true
 	return fmt.Errorf("config error")
 }
-func (svc *svcWithErrors) Stop(ctx Context) error {
-	svc.stopCalled = true
+func (cmp *cmpWithErrors) Stop(ctx Context) error {
+	cmp.stopCalled = true
 	return fmt.Errorf("config error")
 }
 
-func (svc *svcWithErrors) IsHealthy(ctx Context) bool { return svc.startCalled && !svc.stopCalled }
+func (cmp *cmpWithErrors) IsHealthy(ctx Context) bool { return cmp.startCalled && !cmp.stopCalled }
 
 func TestGroup(t *testing.T) {
 	Convey("After we create a group", t, func() {
-		grp := NewGroup("base", nil)
+		grp := New("base").(*group)
 		So(grp, ShouldNotBeNil)
 		So(grp.parent, ShouldBeNil)
 		So(grp.ctx, ShouldNotBeNil)
-		So(grp.AddService(newConfigStore), ShouldBeNil)
+		So(grp.Add(newConfigStore), ShouldBeNil)
 
-		Convey("we should be able to add a service with no hooks", func() {
-			So(grp.AddService(func(ctx Context) *svc { return &svc{} }), ShouldBeNil)
+		Convey("we should be able to add a component with no hooks", func() {
+			So(grp.Add(func(ctx Context) *cmp { return &cmp{} }), ShouldBeNil)
 			So(grp.Configure(), ShouldBeNil)
 			So(grp.Start(), ShouldBeNil)
 			So(grp.Stop(), ShouldBeNil)
 
 			// Assert that none of the hooks are called
-			grp.Invoke(func(s *svc) {
+			grp.Invoke(func(s *cmp) {
 				So(s.configureCalled, ShouldBeFalse)
 				So(s.stopCalled, ShouldBeFalse)
 				So(s.startCalled, ShouldBeFalse)
 			})
 		})
 
-		Convey("we should be able to add service with hooks", func() {
-			err := grp.AddService(newSvcWithHooks)
+		Convey("we should be able to add component with hooks", func() {
+			err := grp.Add(newCmpWithHooks)
 			So(err, ShouldBeNil)
 			So(grp.IsHealthy(), ShouldBeFalse)
 
-			grp.Invoke(func(s *svcWithHooks) {
+			grp.Invoke(func(s *cmpWithHooks) {
 				Convey("we should be able to configure the group", func() {
 					So(grp.Configure(), ShouldBeNil)
 					So(s.configureCalled, ShouldBeTrue)
@@ -109,10 +109,10 @@ func TestGroup(t *testing.T) {
 			})
 		})
 
-		Convey("check service with errors", func() {
-			So(grp.AddService(newSvcWithErrors), ShouldBeNil)
+		Convey("check component with errors", func() {
+			So(grp.Add(newCmpWithErrors), ShouldBeNil)
 			So(grp.IsHealthy(), ShouldBeFalse)
-			grp.Invoke(func(s *svcWithErrors) {
+			grp.Invoke(func(s *cmpWithErrors) {
 				Convey("configure the group should be error", func() {
 					So(grp.Configure(), ShouldNotBeNil)
 					So(s.configureCalled, ShouldBeTrue)
@@ -136,16 +136,16 @@ func TestGroup(t *testing.T) {
 
 func TestGroupHierarchy(t *testing.T) {
 	Convey("Create the root group", t, func() {
-		root := NewGroup("root", nil)
+		root := New("root").(*group)
 		So(root, ShouldNotBeNil)
-		So(root.AddService(newConfigStore), ShouldBeNil)
-		grp := NewGroup("test", root)
+		So(root.Add(newConfigStore), ShouldBeNil)
+		grp := root.New("test").(*group)
 		So(grp, ShouldNotBeNil)
-		Convey("we should be able to add service with hooks", func() {
-			So(grp.AddService(newSvcWithHooks), ShouldBeNil)
+		Convey("we should be able to add component with hooks", func() {
+			So(grp.Add(newCmpWithHooks), ShouldBeNil)
 			So(root.IsHealthy(), ShouldBeFalse)
 
-			grp.Invoke(func(s *svcWithHooks) {
+			grp.Invoke(func(s *cmpWithHooks) {
 				Convey("we should be able to configure the group", func() {
 					So(root.Configure(), ShouldBeNil)
 					So(s.configureCalled, ShouldBeTrue)
@@ -163,10 +163,10 @@ func TestGroupHierarchy(t *testing.T) {
 				})
 			})
 		})
-		Convey("check service with errors", func() {
-			So(grp.AddService(newSvcWithErrors), ShouldBeNil)
+		Convey("check component with errors", func() {
+			So(grp.Add(newCmpWithErrors), ShouldBeNil)
 			So(grp.IsHealthy(), ShouldBeFalse)
-			grp.Invoke(func(s *svcWithErrors) {
+			grp.Invoke(func(s *cmpWithErrors) {
 				Convey("configure the group should be error", func() {
 					So(root.Configure(), ShouldNotBeNil)
 					So(s.configureCalled, ShouldBeTrue)

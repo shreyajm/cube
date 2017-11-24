@@ -14,7 +14,7 @@ type jsonStore struct {
 
 // NewJSONStore returns a config store backed by a JSON stream.
 //
-// The first level keys in the JSON stream match the service names and the
+// The first level keys in the JSON stream match the component names and the
 // values must be decodeable into the types used to retrieve the config.
 func NewJSONStore(r io.Reader) Store {
 	return &jsonStore{

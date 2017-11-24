@@ -6,12 +6,12 @@ import (
 	"syscall"
 	"testing"
 
+	"github.com/anuvu/cube/component"
 	"github.com/anuvu/cube/config"
-	"github.com/anuvu/cube/service"
 	. "github.com/smartystreets/goconvey/convey"
 )
 
-func newConfigStore(ctx service.Context) config.Store {
+func newConfigStore(ctx component.Context) config.Store {
 	ctx.Log().Info().Msg("tester config store created")
 	r := strings.NewReader("")
 	return config.NewJSONStore(r)
@@ -20,56 +20,61 @@ func newConfigStore(ctx service.Context) config.Store {
 type tester struct {
 }
 
-func newtest(ctx service.Context) *tester {
+func newtest(ctx component.Context) *tester {
 	ctx.Log().Info().Msg("tester object created")
 	return &tester{}
 }
 
-func (d *tester) Configure(ctx service.Context, store config.Store) error {
+func (d *tester) Configure(ctx component.Context, store config.Store) error {
 	return nil
 }
 
-func (d *tester) Start(ctx service.Context) error {
+func (d *tester) Start(ctx component.Context) error {
 	return errors.New("bad start")
 }
 
 type stoptester struct {
 }
 
-func (d *stoptester) Stop(ctx service.Context) error {
+func (d *stoptester) Stop(ctx component.Context) error {
 	return errors.New("bad stop")
 }
 
 func TestCubePanics(t *testing.T) {
 	Convey("cube main should panic if there is no config store", t, func() {
-		initFunc := func(g ComponentGroup) { g.AddComponent(newtest) }
+		initFunc := func(g component.Group) error { return g.Add(newtest) }
 		So(func() { Main(initFunc) }, ShouldPanic)
 	})
+
 	Convey("cube main should panic dependencies are not met", t, func() {
-		initFunc := func(g ComponentGroup) { g.AddComponent(func(i *int) {}) }
+		initFunc := func(g component.Group) error { return g.Add(func(i *int) {}) }
 		So(func() { Main(initFunc) }, ShouldPanic)
 	})
+
 	Convey("cube main should panic on start errors", t, func() {
-		initFunc := func(g ComponentGroup) {
-			g.AddComponent(newConfigStore)
-			g.AddComponent(newtest)
+		initFunc := func(g component.Group) error {
+			g.Add(newConfigStore)
+			g.Add(newtest)
+			return nil
 		}
 		So(func() { Main(initFunc) }, ShouldPanic)
 	})
 	Convey("cube main should panic on stop errors", t, func() {
-		initFunc := func(g ComponentGroup) {
-			g.AddComponent(newConfigStore)
-			g.AddComponent(func() *stoptester { return &stoptester{} })
-			g.AddComponent(func(s *stoptester, k service.ServerShutdown) { k() })
+		initFunc := func(g component.Group) error {
+			g.Add(newConfigStore)
+			g.Add(func() *stoptester { return &stoptester{} })
+			g.Add(func(s *stoptester, k component.ServerShutdown) { k() })
+			return nil
 		}
 		So(func() { Main(initFunc) }, ShouldPanic)
 	})
 	Convey("calling shutdown handler should stop server", t, func() {
-		initFunc := func(g ComponentGroup) {
-			g.AddComponent(newConfigStore)
-			g.AddComponent(func(s *shutDownHandler) {
+		initFunc := func(g component.Group) error {
+			g.Add(newConfigStore)
+			g.Add(func(s *shutDownHandler) {
 				s.shut(syscall.SIGTERM)
 			})
+			return nil
 		}
 		So(func() { Main(initFunc) }, ShouldNotPanic)
 	})

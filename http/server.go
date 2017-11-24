@@ -6,12 +6,12 @@ import (
 	"net/http"
 	"sync/atomic"
 
+	"github.com/anuvu/cube/component"
 	"github.com/anuvu/cube/config"
-	"github.com/anuvu/cube/service"
 )
 
-// Service is the object through which people can register HTTP servers.
-type Service interface {
+// Server is the object through which people can register HTTP servers.
+type Server interface {
 	Register(string, http.Handler)
 }
 
@@ -22,14 +22,14 @@ type server struct {
 	running int32
 }
 
-// configuration defines the configurable parameters of http service
+// configuration defines the configurable parameters of http server
 type configuration struct {
 	// Listen port
 	Port int `json:"port"`
 }
 
-// New creates a new HTTP Service
-func New(ctx service.Context) Service {
+// New creates a new HTTP server
+func New(ctx component.Context) Server {
 	return &server{config: &configuration{}, mux: http.NewServeMux()}
 }
 
@@ -37,11 +37,11 @@ func (s *server) Register(url string, h http.Handler) {
 	s.mux.Handle(url, h)
 }
 
-func (s *server) Configure(ctx service.Context, store config.Store) error {
+func (s *server) Configure(ctx component.Context, store config.Store) error {
 	return store.Get("http", s.config)
 }
 
-func (s *server) Start(ctx service.Context) error {
+func (s *server) Start(ctx component.Context) error {
 	addr := fmt.Sprintf("localhost:%d", s.config.Port)
 	s.server = http.Server{Addr: addr, Handler: s.mux}
 	l, err := net.Listen("tcp", addr)
@@ -57,11 +57,11 @@ func (s *server) Start(ctx service.Context) error {
 	return nil
 }
 
-func (s *server) Stop(ctx service.Context) error {
+func (s *server) Stop(ctx component.Context) error {
 	atomic.AddInt32(&s.running, -1)
 	return s.server.Close()
 }
 
-func (s *server) IsHealthy(ctx service.Context) bool {
+func (s *server) IsHealthy(ctx component.Context) bool {
 	return atomic.LoadInt32(&s.running) > 0
 }
