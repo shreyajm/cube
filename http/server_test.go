@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/anuvu/cube/component"
 	"github.com/anuvu/cube/config"
-	"github.com/anuvu/cube/service"
 	. "github.com/smartystreets/goconvey/convey"
 )
 
@@ -42,16 +42,16 @@ func (th testHandler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 
 func TestHTTPServer(t *testing.T) {
 	Convey("http server actually serves stuff", t, func() {
-		grp := service.NewGroup("http", nil)
-		So(grp.AddService(newConfigStore), ShouldBeNil)
+		grp := component.New("http")
+		So(grp.Add(newConfigStore), ShouldBeNil)
 		So(grp.Invoke(func(s config.Store) error {
 			return s.Open()
 		}), ShouldBeNil)
-		So(grp.AddService(New), ShouldBeNil)
+		So(grp.Add(New), ShouldBeNil)
 		So(grp.Configure(), ShouldBeNil)
 		So(grp.Start(), ShouldBeNil)
 
-		grp.Invoke(func(s Service) {
+		grp.Invoke(func(s Server) {
 			s.Register("/foo", testHandler{})
 		})
 
@@ -71,24 +71,25 @@ func TestHTTPServer(t *testing.T) {
 
 func TestBadConfig(t *testing.T) {
 	Convey("http server with bad config", t, func() {
-		grp := service.NewGroup("http", nil)
-		So(grp.AddService(newBadConfig), ShouldBeNil)
+		grp := component.New("http")
+		So(grp.Add(newBadConfig), ShouldBeNil)
 		So(grp.Invoke(func(s config.Store) error {
 			return s.Open()
 		}), ShouldBeNil)
-		So(grp.AddService(New), ShouldBeNil)
+		So(grp.Add(New), ShouldBeNil)
 		So(grp.Configure(), ShouldNotBeNil)
 	})
 }
 
 func TestBadPort(t *testing.T) {
 	Convey("http server with bad port", t, func() {
-		grp := service.NewGroup("http", nil)
-		So(grp.AddService(newBadPort), ShouldBeNil)
-		So(grp.Invoke(func(s config.Store) error {
-			return s.Open()
-		}), ShouldBeNil)
-		So(grp.AddService(New), ShouldBeNil)
+		grp := component.New("http")
+		So(grp.Add(newBadPort), ShouldBeNil)
+		So(grp.Invoke(
+			func(s config.Store) error {
+				return s.Open()
+			}), ShouldBeNil)
+		So(grp.Add(New), ShouldBeNil)
 		So(grp.Configure(), ShouldBeNil)
 		So(grp.Start(), ShouldNotBeNil)
 	})

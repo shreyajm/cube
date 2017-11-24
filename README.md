@@ -2,12 +2,12 @@
 
 [![GoDoc][doc-img]][doc] [![Build Status][ci-img]][ci] [![Coverage Status][cov-img]][cov] [![Go Report Card][report-card-img]][report-card]
 
-Cube is a application server framework to develop server applications in golang. Cube provides a service based framework for developing applications and provides common service implementations for applications to reuse.
+Cube is a application server framework to develop server applications in golang. Cube provides a component based framework for developing applications and provides common componet implementations for applications to reuse.
 
-## Common Application Services
+## Features
 
 * Configuration
-* Service Lifecycle
+* Component Lifecycle
 * Logging
 * Health
 * Metrics

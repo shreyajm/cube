@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/anuvu/cube/service"
+	"github.com/anuvu/cube/component"
 	. "github.com/smartystreets/goconvey/convey"
 )
 
@@ -34,7 +34,7 @@ func (s *sigH) Sig(i int) os.Signal {
 
 func TestSignals(t *testing.T) {
 	Convey("Create a signal Router", t, func() {
-		s := NewSignalRouter()
+		s := New()
 		So(s, ShouldNotBeNil)
 		Convey("Should be able add handler", func() {
 			So(s.IsIgnored(syscall.SIGINT), ShouldBeFalse)
@@ -52,9 +52,9 @@ func TestSignals(t *testing.T) {
 			So(s.IsHandled(syscall.SIGINT), ShouldBeFalse)
 		})
 
-		Convey("Should be able to start the service", func() {
-			grp := service.NewGroup("signal_test", nil)
-			So(grp.AddService(NewSignalRouter), ShouldBeNil)
+		Convey("Should be able to start the component", func() {
+			grp := component.New("signal_test")
+			So(grp.Add(New), ShouldBeNil)
 
 			grp.Invoke(func(s Router) {
 				sh := &sigH{[]os.Signal{}, &sync.RWMutex{}}
@@ -78,9 +78,9 @@ func TestSignals(t *testing.T) {
 					So(sh.Sig(0), ShouldEqual, syscall.SIGINT)
 				})
 
-				Convey("Should be able to stop the service", func() {
+				Convey("Should be able to stop the component", func() {
 					So(grp.IsHealthy(), ShouldBeTrue)
-					grp.Invoke(func(sf service.Shutdown) {
+					grp.Invoke(func(sf component.Shutdown) {
 						sf()
 					})
 					time.Sleep(time.Second)

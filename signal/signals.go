@@ -5,7 +5,7 @@ import (
 	"os/signal"
 	"sync"
 
-	"github.com/anuvu/cube/service"
+	"github.com/anuvu/cube/component"
 )
 
 // Handler is a function that handles the signal.
@@ -33,13 +33,13 @@ type router struct {
 	signalCh   chan os.Signal
 	signals    map[os.Signal]Handler
 	ignSignals map[os.Signal]struct{}
-	ctx        service.Context
+	ctx        component.Context
 	running    bool
 	lock       *sync.RWMutex
 }
 
-// NewSignalRouter returns a signal router.
-func NewSignalRouter() Router {
+// New returns a signal router.
+func New() Router {
 	r := &router{
 		signalCh:   make(chan os.Signal),
 		signals:    make(map[os.Signal]Handler),
@@ -88,7 +88,7 @@ func (s *router) IsIgnored(sig os.Signal) bool {
 }
 
 // StartRouter starts the signal router and listens for registered signals.
-func (s *router) Start(ctx service.Context) error {
+func (s *router) Start(ctx component.Context) error {
 	go func() {
 		defer func() {
 			s.lock.Lock()
@@ -119,7 +119,7 @@ func (s *router) Start(ctx service.Context) error {
 }
 
 // IsHealthy returns true if the router is running, else false.
-func (s *router) IsHealthy(ctx service.Context) bool {
+func (s *router) IsHealthy(ctx component.Context) bool {
 	s.lock.RLock()
 	defer s.lock.RUnlock()
 	return s.running

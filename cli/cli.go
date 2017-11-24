@@ -4,8 +4,8 @@ import (
 	"flag"
 	"os"
 
+	"github.com/anuvu/cube/component"
 	"github.com/anuvu/cube/config"
-	"github.com/anuvu/cube/service"
 )
 
 // Cli wraps flags.
@@ -19,6 +19,6 @@ func New() *Cli {
 }
 
 // Configure parses the flags.
-func (c *Cli) Configure(ctx service.Context, store config.Store) error {
+func (c *Cli) Configure(ctx component.Context, store config.Store) error {
 	return c.Flags.Parse(os.Args[1:])
 }
