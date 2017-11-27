@@ -2,7 +2,7 @@ package cube
 
 import (
 	"errors"
-	"strings"
+	"os"
 	"syscall"
 	"testing"
 
@@ -11,21 +11,26 @@ import (
 	. "github.com/smartystreets/goconvey/convey"
 )
 
-func newConfigStore(ctx component.Context) config.Store {
-	ctx.Log().Info().Msg("tester config store created")
-	r := strings.NewReader("")
-	return config.NewJSONStore(r)
-}
-
 type tester struct {
+	configError bool
 }
 
 func newtest(ctx component.Context) *tester {
-	ctx.Log().Info().Msg("tester object created")
 	return &tester{}
 }
 
-func (d *tester) Configure(ctx component.Context, store config.Store) error {
+func newBadConfig() *tester {
+	return &tester{true}
+}
+
+func (d *tester) Config() config.Config {
+	return nil
+}
+
+func (d *tester) Configure(ctx component.Context) error {
+	if d.configError {
+		return errors.New("bad config")
+	}
 	return nil
 }
 
@@ -41,8 +46,13 @@ func (d *stoptester) Stop(ctx component.Context) error {
 }
 
 func TestCubePanics(t *testing.T) {
-	Convey("cube main should panic if there is no config store", t, func() {
-		initFunc := func(g component.Group) error { return g.Add(newtest) }
+	// Replace os.Args for test case
+	oldArgs := os.Args
+	os.Args = []string{"cube.test"}
+	defer func() { os.Args = oldArgs }()
+
+	Convey("cube main should panic on config error", t, func() {
+		initFunc := func(g component.Group) error { return g.Add(newBadConfig) }
 		So(func() { Main(initFunc) }, ShouldPanic)
 	})
 
@@ -53,7 +63,6 @@ func TestCubePanics(t *testing.T) {
 
 	Convey("cube main should panic on start errors", t, func() {
 		initFunc := func(g component.Group) error {
-			g.Add(newConfigStore)
 			g.Add(newtest)
 			return nil
 		}
@@ -61,7 +70,6 @@ func TestCubePanics(t *testing.T) {
 	})
 	Convey("cube main should panic on stop errors", t, func() {
 		initFunc := func(g component.Group) error {
-			g.Add(newConfigStore)
 			g.Add(func() *stoptester { return &stoptester{} })
 			g.Add(func(s *stoptester, k component.ServerShutdown) { k() })
 			return nil
@@ -70,7 +78,6 @@ func TestCubePanics(t *testing.T) {
 	})
 	Convey("calling shutdown handler should stop server", t, func() {
 		initFunc := func(g component.Group) error {
-			g.Add(newConfigStore)
 			g.Add(func(s *shutDownHandler) {
 				s.shut(syscall.SIGTERM)
 			})

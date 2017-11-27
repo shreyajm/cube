@@ -8,8 +8,7 @@ import (
 
 type jsonStore struct {
 	r  io.Reader
-	kv map[string]interface{}
-	kb map[string][]byte
+	kb map[Key][]byte
 }
 
 // NewJSONStore returns a config store backed by a JSON stream.
@@ -19,14 +18,14 @@ type jsonStore struct {
 func NewJSONStore(r io.Reader) Store {
 	return &jsonStore{
 		r:  r,
-		kb: map[string][]byte{},
+		kb: map[Key][]byte{},
 	}
 }
 
 func (j *jsonStore) Open() error {
 	d := json.NewDecoder(j.r)
 	for {
-		data := map[string]*cfgData{}
+		data := map[Key]*cfgData{}
 		if err := d.Decode(&data); err == io.EOF {
 			return nil
 		} else if err != nil {
@@ -35,7 +34,7 @@ func (j *jsonStore) Open() error {
 
 		// Cache the key and its corresponding json data
 		for k, v := range data {
-			j.kb[k] = v.b
+			j.kb[Key(k)] = v.b
 		}
 	}
 }
@@ -44,7 +43,13 @@ func (j *jsonStore) Close() {
 	// NOOP
 }
 
-func (j *jsonStore) Get(name string, config interface{}) error {
+func (j *jsonStore) Get(config Config) error {
+	if config == nil || config.Key().IsNil() {
+		// Empty key so just return the default config back
+		return nil
+	}
+
+	name := config.Key()
 	if b, ok := j.kb[name]; ok {
 		if e := json.Unmarshal(b, config); e != nil {
 			// Bad buffer for the current type but lets keep it around

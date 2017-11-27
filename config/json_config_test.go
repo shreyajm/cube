@@ -10,6 +10,7 @@ import (
 )
 
 type httpConfig struct {
+	BaseConfig
 	Port int `json:"port"`
 }
 
@@ -27,6 +28,7 @@ func (h *httpConfig) UnmarshalJSON(b []byte) error {
 }
 
 type loggerConfig struct {
+	BaseConfig
 	File string `json:"file"`
 }
 
@@ -40,23 +42,31 @@ func TestJSONStore(t *testing.T) {
 		Convey("Should be able to load the file", func() {
 			So(s.Open(), ShouldBeNil)
 			Convey("should be able load http config", func() {
-				cfg := &httpConfig{}
-				err := s.Get("http", cfg)
+				cfg := &httpConfig{BaseConfig{"http"}, 0}
+				err := s.Get(cfg)
 				So(err, ShouldBeNil)
 				So(cfg, ShouldNotBeNil)
 				So(cfg.Port, ShouldEqual, 8080)
 			})
 			Convey("should not find randon config", func() {
-				err := s.Get("some_random_key", nil)
+				err := s.Get(&httpConfig{BaseConfig{"some_random_key"}, 0})
 				So(err, ShouldBeError)
 			})
+			Convey("should return default config on empty key", func() {
+				cfg := &httpConfig{BaseConfig{""}, 9999}
+				So(s.Get(cfg), ShouldBeNil)
+				So(cfg.Port, ShouldEqual, 9999)
+			})
+			Convey("should return nil on nil config", func() {
+				So(s.Get(nil), ShouldBeNil)
+			})
 			Convey("should not be able to find wrong logger type", func() {
-				err := s.Get("logger", &httpConfig{})
+				err := s.Get(&httpConfig{BaseConfig{"logger"}, 0})
 				So(err, ShouldBeError)
 			})
 			Convey("should be able to find logger", func() {
-				cfg := &loggerConfig{}
-				err := s.Get("logger", cfg)
+				cfg := &loggerConfig{BaseConfig{"logger"}, ""}
+				err := s.Get(cfg)
 				So(err, ShouldBeNil)
 				So(cfg, ShouldNotBeNil)
 				So(cfg.File, ShouldEqual, "/var/log/test.log")
@@ -77,7 +87,7 @@ func TestBadJSON(t *testing.T) {
 			badKeyJSON := strings.NewReader(`{"http": {"portx": "8080"}}`)
 			s := NewJSONStore(badKeyJSON)
 			So(s.Open(), ShouldBeNil)
-			So(s.Get("http", &httpConfig{}), ShouldBeError)
+			So(s.Get(&httpConfig{BaseConfig{"http"}, 0}), ShouldBeError)
 		})
 	})
 }

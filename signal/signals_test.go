@@ -33,6 +33,10 @@ func (s *sigH) Sig(i int) os.Signal {
 }
 
 func TestSignals(t *testing.T) {
+	// Replace os.Args
+	oldArgs := os.Args
+	os.Args = []string{"signal.test"}
+	defer func() { os.Args = oldArgs }()
 	Convey("Create a signal Router", t, func() {
 		s := New()
 		So(s, ShouldNotBeNil)

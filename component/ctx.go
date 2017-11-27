@@ -19,6 +19,11 @@ type Context interface {
 // Shutdown invokes the shutdown sequence
 type Shutdown func()
 
+// RootContext returns a new root context with provided logger.
+func RootContext(log zlog.Logger) Context {
+	return newContext(nil, log)
+}
+
 func newContext(p *srvCtx, log zlog.Logger) *srvCtx {
 	c := context.Background()
 	if p != nil {
