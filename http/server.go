@@ -24,21 +24,33 @@ type server struct {
 
 // configuration defines the configurable parameters of http server
 type configuration struct {
+	config.BaseConfig
 	// Listen port
 	Port int `json:"port"`
 }
 
 // New creates a new HTTP server
 func New(ctx component.Context) Server {
-	return &server{config: &configuration{}, mux: http.NewServeMux()}
+	cfg := &configuration{
+		config.BaseConfig{ConfigKey: "http"},
+		0,
+	}
+	return &server{
+		config: cfg,
+		mux:    http.NewServeMux(),
+	}
 }
 
 func (s *server) Register(url string, h http.Handler) {
 	s.mux.Handle(url, h)
 }
 
-func (s *server) Configure(ctx component.Context, store config.Store) error {
-	return store.Get("http", s.config)
+func (s *server) Config() config.Config {
+	return s.config
+}
+
+func (s *server) Configure(ctx component.Context) error {
+	return nil
 }
 
 func (s *server) Start(ctx component.Context) error {
@@ -51,7 +63,7 @@ func (s *server) Start(ctx component.Context) error {
 	atomic.AddInt32(&s.running, 1)
 	go func() {
 		if err := s.server.Serve(l); err != nil {
-			ctx.Log().Info().Error(err).Msg("serve stopping")
+			ctx.Log().Info().Error(err).Msg("error starting server")
 		}
 	}()
 	return nil

@@ -10,7 +10,7 @@ import (
 
 func TestContext(t *testing.T) {
 	Convey("After we create a context", t, func() {
-		ctx := newContext(nil, zlog.New("test"))
+		ctx := RootContext(zlog.New("test")).(*srvCtx)
 		go func() {
 			<-ctx.Ctx().Done()
 			ctx.Log().Info().Msg("Done")

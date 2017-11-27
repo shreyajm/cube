@@ -2,32 +2,40 @@ package component
 
 import (
 	"fmt"
-	"strings"
+	"os"
 	"testing"
 
 	"github.com/anuvu/cube/config"
 	. "github.com/smartystreets/goconvey/convey"
 )
 
-func newConfigStore() config.Store {
-	r := strings.NewReader(`{"http": {"port": 8080}}
-		{"logger": {"file": "/var/log/test.log"}}`)
-	return config.NewJSONStore(r)
-}
-
 type cmp struct {
 	startCalled     bool
 	stopCalled      bool
 	configureCalled bool
+	configCalled    bool
+	errorConfig     bool
 }
 
 type cmpWithHooks cmp
 
-func newCmpWithHooks(ctx Context) *cmpWithHooks {
-	return &cmpWithHooks{false, false, false}
+func newCmpConfigError() *cmpWithHooks {
+	return &cmpWithHooks{errorConfig: true}
 }
 
-func (cmp *cmpWithHooks) Configure(ctx Context, store config.Store) error {
+func newCmpWithHooks(ctx Context) *cmpWithHooks {
+	return &cmpWithHooks{}
+}
+
+func (cmp *cmpWithHooks) Config() config.Config {
+	cmp.configCalled = true
+	if cmp.errorConfig {
+		return &config.BaseConfig{ConfigKey: "hooks"}
+	}
+	return nil
+}
+
+func (cmp *cmpWithHooks) Configure(ctx Context) error {
 	cmp.configureCalled = true
 	return nil
 }
@@ -48,7 +56,12 @@ func newCmpWithErrors(ctx Context) *cmpWithErrors {
 	return &cmpWithErrors{}
 }
 
-func (cmp *cmpWithErrors) Configure(ctx Context, store config.Store) error {
+func (cmp *cmpWithErrors) Config() config.Config {
+	cmp.configCalled = true
+	return nil
+}
+
+func (cmp *cmpWithErrors) Configure(ctx Context) error {
 	cmp.configureCalled = true
 	return fmt.Errorf("config error")
 }
@@ -64,12 +77,15 @@ func (cmp *cmpWithErrors) Stop(ctx Context) error {
 func (cmp *cmpWithErrors) IsHealthy(ctx Context) bool { return cmp.startCalled && !cmp.stopCalled }
 
 func TestGroup(t *testing.T) {
+	// Replace os.Args
+	oldArgs := os.Args
+	os.Args = []string{"group.test"}
+	defer func() { os.Args = oldArgs }()
 	Convey("After we create a group", t, func() {
 		grp := New("base").(*group)
 		So(grp, ShouldNotBeNil)
 		So(grp.parent, ShouldBeNil)
 		So(grp.ctx, ShouldNotBeNil)
-		So(grp.Add(newConfigStore), ShouldBeNil)
 
 		Convey("we should be able to add a component with no hooks", func() {
 			So(grp.Add(func(ctx Context) *cmp { return &cmp{} }), ShouldBeNil)
@@ -135,10 +151,14 @@ func TestGroup(t *testing.T) {
 }
 
 func TestGroupHierarchy(t *testing.T) {
+	// Replace os.Args
+	oldArgs := os.Args
+	os.Args = []string{"group.test"}
+	defer func() { os.Args = oldArgs }()
+
 	Convey("Create the root group", t, func() {
 		root := New("root").(*group)
 		So(root, ShouldNotBeNil)
-		So(root.Add(newConfigStore), ShouldBeNil)
 		grp := root.New("test").(*group)
 		So(grp, ShouldNotBeNil)
 		Convey("we should be able to add component with hooks", func() {
@@ -203,5 +223,67 @@ func TestGroupHierarchy(t *testing.T) {
 			// Assert that base and derived contexts are not equal
 			So(baseCtx, ShouldNotEqual, derivedCtx)
 		})
+	})
+}
+
+func TestBadFileStore(t *testing.T) {
+	// Replace os.Args
+	oldArgs := os.Args
+	os.Args = []string{"group.test", "--config.file", "bad_file_name"}
+	defer func() { os.Args = oldArgs }()
+	Convey("Create the root group", t, func() {
+		grp := New("base").(*group)
+		So(grp, ShouldNotBeNil)
+		So(grp.parent, ShouldBeNil)
+		So(grp.ctx, ShouldNotBeNil)
+		So(grp.Configure(), ShouldNotBeNil)
+		So(grp.store.Get(&config.BaseConfig{ConfigKey: "test"}), ShouldNotBeNil)
+	})
+}
+
+func TestFileStore(t *testing.T) {
+	// Replace os.Args
+	oldArgs := os.Args
+	os.Args = []string{"group.test", "--config.file", "./cfg_test.json"}
+	defer func() { os.Args = oldArgs }()
+	Convey("Create the root group", t, func() {
+		grp := New("base").(*group)
+		So(grp, ShouldNotBeNil)
+		So(grp.parent, ShouldBeNil)
+		So(grp.ctx, ShouldNotBeNil)
+		So(grp.Configure(), ShouldBeNil)
+		So(grp.store.Get(&config.BaseConfig{ConfigKey: "test"}), ShouldNotBeNil)
+	})
+}
+
+func TestMemStore(t *testing.T) {
+	// Replace os.Args
+	oldArgs := os.Args
+	os.Args = []string{"group.test", "--config.mem", "{}"}
+	defer func() { os.Args = oldArgs }()
+	Convey("Create the root group", t, func() {
+		grp := New("base").(*group)
+		So(grp, ShouldNotBeNil)
+		So(grp.parent, ShouldBeNil)
+		So(grp.ctx, ShouldNotBeNil)
+		So(grp.Configure(), ShouldBeNil)
+		So(grp.store.Get(&config.BaseConfig{ConfigKey: "test"}), ShouldNotBeNil)
+		grp.Add(newCmpConfigError)
+		So(grp.Configure(), ShouldNotBeNil)
+	})
+}
+
+func TestBadCli(t *testing.T) {
+	// Replace os.Args
+	oldArgs := os.Args
+	os.Args = []string{"group.test", "--config.memx", "{}"}
+	defer func() { os.Args = oldArgs }()
+	Convey("Create the root group", t, func() {
+		grp := New("base").(*group)
+		So(grp, ShouldNotBeNil)
+		So(grp.parent, ShouldBeNil)
+		So(grp.ctx, ShouldNotBeNil)
+		So(grp.Configure(), ShouldNotBeNil)
+		So(grp.store.Get(&config.BaseConfig{ConfigKey: "test"}), ShouldNotBeNil)
 	})
 }

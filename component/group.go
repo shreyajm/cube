@@ -2,29 +2,40 @@ package component
 
 import (
 	"context"
+	"flag"
+	"fmt"
+	"os"
 	"reflect"
+	"strings"
 
 	"github.com/anuvu/cube/config"
 	"github.com/anuvu/cube/di"
 	"github.com/anuvu/zlog"
 )
 
-// ConfigHook is the interface that provides the configuration call back for the component.
+// ConfigHook is the interface that provides the configuration callback for the component.
 type ConfigHook interface {
-	Configure(ctx Context, store config.Store) error
+	// Config returns pointer to the object that captures the configuration of the
+	// component. The framework will populate this object after retrieving the
+	// configuration of the component from the configuration store.
+	Config() config.Config
+
+	// Configure callback is issued after the configuration object is retrieved
+	// from the store.
+	Configure(ctx Context) error
 }
 
-// StartHook is the interface that provides the start call back for the component.
+// StartHook is the interface that provides the start callback for the component.
 type StartHook interface {
 	Start(ctx Context) error
 }
 
-// StopHook is the interface that provides the stop call back for the component.
+// StopHook is the interface that provides the stop callback for the component.
 type StopHook interface {
 	Stop(ctx Context) error
 }
 
-// HealthHook is the interface that provides the health call back for the component.
+// HealthHook is the interface that provides the health callback for the component.
 type HealthHook interface {
 	IsHealthy(ctx Context) bool
 }
@@ -49,6 +60,8 @@ type group struct {
 	name        string
 	parent      *group
 	children    map[string]*group
+	store       config.Store
+	cli         *flag.FlagSet
 	c           *di.Container
 	ctx         *srvCtx
 	configHooks []ConfigHook
@@ -67,19 +80,29 @@ func New(name string) Group {
 
 	// Root container should provide the server shutdown function
 	shut := ServerShutdown(grp.ctx.cancelFunc)
-	if grp.parent == nil {
-		grp.c.Add(func() ServerShutdown { return shut }, nil)
-	}
+	grp.c.Add(func() ServerShutdown { return shut }, nil)
+
+	// Root container should provide cli
+	grp.cli = flag.NewFlagSet(name, flag.ContinueOnError)
+	grp.c.Add(func() *flag.FlagSet { return grp.cli }, nil)
+
+	// Create the store
+	grp.store = newConfigStore(grp.cli)
 	return grp
 }
 
 func newGroup(name string, parent *group) *group {
 	var pc *di.Container
 	var pctx *srvCtx
+	var cli *flag.FlagSet
+	var store config.Store
 	if parent != nil {
 		pc = parent.c
 		pctx = parent.ctx
+		cli = parent.cli
+		store = parent.store
 	}
+
 	log := zlog.New(name)
 	c := di.New(pc, ctxType, shutType)
 	ctx := newContext(pctx, log)
@@ -87,6 +110,8 @@ func newGroup(name string, parent *group) *group {
 		name:        name,
 		parent:      parent,
 		children:    map[string]*group{},
+		store:       store,
+		cli:         cli,
 		c:           c,
 		ctx:         ctx,
 		configHooks: []ConfigHook{},
@@ -118,20 +143,7 @@ func (g *group) Add(ctr interface{}) error {
 	// any of the lifecycle hooks and cache them so that we can invoke them
 	// as part of the server lifecycle.
 	vf := func(v reflect.Value) error {
-		val := v.Interface()
-		if i, ok := val.(ConfigHook); ok {
-			g.configHooks = append(g.configHooks, i)
-		}
-		if i, ok := val.(StartHook); ok {
-			g.startHooks = append(g.startHooks, i)
-		}
-		if i, ok := val.(StopHook); ok {
-			g.stopHooks = append(g.stopHooks, i)
-		}
-		if i, ok := val.(HealthHook); ok {
-			g.healthHooks = append(g.healthHooks, i)
-		}
-		return nil
+		return g.addLCHooks(v)
 	}
 	// add the component constructor to the container
 	return g.c.Add(ctr, vf)
@@ -144,9 +156,24 @@ func (g *group) Invoke(f interface{}) error {
 
 // Configure calls the configure hooks on all components registered for configuration.
 func (g *group) Configure() error {
+	if g.parent == nil {
+		// root group parse the cli and initialize the config store
+		if err := g.cli.Parse(os.Args[1:]); err != nil {
+			return err
+		}
+		if err := g.store.Open(); err != nil {
+			return err
+		}
+		defer g.store.Close()
+	}
+
 	g.ctx.Log().Info().Msg("configuring group")
 	for _, h := range g.configHooks {
-		if err := g.c.Invoke(h.Configure, nil); err != nil {
+		cfg := h.Config()
+		if err := g.store.Get(cfg); err != nil {
+			return err
+		}
+		if err := h.Configure(g.ctx); err != nil {
 			return err
 		}
 	}
@@ -222,4 +249,68 @@ func (g *group) IsHealthy() bool {
 		}
 	}
 	return true
+}
+
+// Add the lifecycle hooks to the group.
+func (g *group) addLCHooks(v reflect.Value) error {
+	val := v.Interface()
+	if i, ok := val.(ConfigHook); ok {
+		g.configHooks = append(g.configHooks, i)
+	}
+	if i, ok := val.(StartHook); ok {
+		g.startHooks = append(g.startHooks, i)
+	}
+	if i, ok := val.(StopHook); ok {
+		g.stopHooks = append(g.stopHooks, i)
+	}
+	if i, ok := val.(HealthHook); ok {
+		g.healthHooks = append(g.healthHooks, i)
+	}
+	return nil
+}
+
+func newConfigStore(cli *flag.FlagSet) config.Store {
+	s := &cfgStore{}
+	cli.StringVar(&s.fileCfg, "config.file", "", "file configuration store")
+	cli.StringVar(&s.memCfg, "config.mem", "", "in-memory configuration store")
+	return s
+}
+
+type cfgStore struct {
+	fileCfg string
+	memCfg  string
+	store   config.Store
+}
+
+func (s *cfgStore) Open() error {
+	if s.fileCfg != "" {
+		r, err := os.Open(s.fileCfg)
+		if err != nil {
+			return err
+		}
+		s.store = config.NewJSONStore(r)
+		return s.store.Open()
+	} else if s.memCfg != "" {
+		r := strings.NewReader(s.memCfg)
+		s.store = config.NewJSONStore(r)
+		return s.store.Open()
+	}
+	// No config store
+	return nil
+}
+
+func (s *cfgStore) Close() {
+	if s.store != nil {
+		s.store.Close()
+	}
+}
+
+func (s *cfgStore) Get(config config.Config) error {
+	if config == nil || config.Key().IsNil() {
+		return nil
+	}
+	if s.store == nil {
+		return fmt.Errorf("%s key not found", config.Key())
+	}
+	return s.store.Get(config)
 }
