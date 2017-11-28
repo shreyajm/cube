@@ -33,7 +33,6 @@ type router struct {
 	signalCh   chan os.Signal
 	signals    map[os.Signal]Handler
 	ignSignals map[os.Signal]struct{}
-	ctx        component.Context
 	running    bool
 	lock       *sync.RWMutex
 }
