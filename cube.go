@@ -33,6 +33,11 @@ func Main(initF ServerInit) {
 		panic(err)
 	}
 
+	// Create the groups
+	if err := base.Create(); err != nil {
+		panic(err)
+	}
+
 	// Configure the server
 	if err := base.Configure(); err != nil {
 		panic(err)

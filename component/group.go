@@ -49,6 +49,7 @@ type Group interface {
 	Add(ctr interface{}) error
 	Invoke(f interface{}) error
 	New(name string) Group
+	Create() error
 	Configure() error
 	Start() error
 	Stop() error
@@ -80,11 +81,11 @@ func New(name string) Group {
 
 	// Root container should provide the server shutdown function
 	shut := ServerShutdown(grp.ctx.cancelFunc)
-	grp.c.Add(func() ServerShutdown { return shut }, nil)
+	grp.c.Add(func() ServerShutdown { return shut })
 
 	// Root container should provide cli
 	grp.cli = flag.NewFlagSet(name, flag.ContinueOnError)
-	grp.c.Add(func() *flag.FlagSet { return grp.cli }, nil)
+	grp.c.Add(func() *flag.FlagSet { return grp.cli })
 
 	// Create the store
 	grp.store = newConfigStore(grp.cli)
@@ -121,8 +122,8 @@ func newGroup(name string, parent *group) *group {
 	}
 
 	// Provide the Context, Shutdown per group
-	grp.c.Add(func() Context { return grp.ctx }, nil)
-	grp.c.Add(func() Shutdown { return grp.ctx.Shutdown }, nil)
+	grp.c.Add(func() Context { return grp.ctx })
+	grp.c.Add(func() Shutdown { return grp.ctx.Shutdown })
 
 	return grp
 }
@@ -138,20 +139,34 @@ func (g *group) New(name string) Group {
 
 // Add adds a new component constructor to the component group.
 func (g *group) Add(ctr interface{}) error {
-	// g.c.add will call this function for each value produced by ctr
+	// add the component constructor to the container
+	return g.c.Add(ctr)
+}
+
+// Invoke invokes a function with dependency injection.
+func (g *group) Invoke(f interface{}) error {
+	return g.c.Invoke(f, nil)
+}
+
+func (g *group) Create() error {
+	g.ctx.Log().Info().Msg("creating group")
+	// g.c.Create will call this function for each value produced by ctr
 	// constructor method we then check if the produced value implements
 	// any of the lifecycle hooks and cache them so that we can invoke them
 	// as part of the server lifecycle.
 	vf := func(v reflect.Value) error {
 		return g.addLCHooks(v)
 	}
-	// add the component constructor to the container
-	return g.c.Add(ctr, vf)
-}
+	if err := g.c.Create(vf); err != nil {
+		return err
+	}
 
-// Invoke invokes a function with dependency injection.
-func (g *group) Invoke(f interface{}) error {
-	return g.c.Invoke(f, nil)
+	for _, child := range g.children {
+		if err := child.Create(); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // Configure calls the configure hooks on all components registered for configuration.

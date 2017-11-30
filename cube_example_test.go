@@ -65,6 +65,8 @@ func ExampleMain() {
 	})
 
 	// Output:
+	// {"level":"info","name":"cube.test-core","message":"creating group"}
+	// {"level":"info","name":"cube.test","message":"creating group"}
 	// {"level":"info","name":"cube.test","message":"dummy object created"}
 	// {"level":"info","name":"cube.test","message":"killer object created"}
 	// {"level":"info","name":"cube.test-core","message":"configuring group"}

@@ -23,16 +23,18 @@ import (
 type Container struct {
 	parent   *Container
 	objTable map[reflect.Type]reflect.Value
-	dups     []reflect.Type
+	dupes    []reflect.Type
+	dag      Graph
 }
 
 // New creates a new container chained to a parent container, if parent
 // is nil it is a root container.
-func New(p *Container, dups ...reflect.Type) *Container {
+func New(p *Container, dupes ...reflect.Type) *Container {
 	return &Container{
 		parent:   p,
 		objTable: map[reflect.Type]reflect.Value{},
-		dups:     dups,
+		dupes:    dupes,
+		dag:      NewDAG(),
 	}
 }
 
@@ -80,21 +82,23 @@ func (c *Container) Invoke(fx interface{}, vp ValueProcessor) error {
 	return nil
 }
 
-// Add invokes the provided constructor evaluating its dependencies using this container.
-// If the constructor returns an error Add will return that error to the caller and rejects
-// any values produced by the constructor. If success, the values returned by the constructor
+// Create invokes all the constructors registered with the container. It evaluates each constructor's
+// dependencies using the container and its ancestor hierarchy.
+//
+// If the constructor returns an error create will return that error to the caller and rejects
+// any values produced by the constructor. If success, the values returned by each constructor
 // are cached in this container against their types and can be used for subsequent
 // dependency calculations.
 //
 // If the type of the value is produced by the constructor is already present in this
-// container or its ancestors, the value is rejected and Add returns an error.
+// container or its ancestors, the value is rejected and create returns an error.
 //
-// If a value processor is provided, Add calls the value processor function on all returned
-// values of the constructor. This can used to cache the values outside the container.
-func (c *Container) Add(ctr interface{}, vp ValueProcessor) error {
+// If a value processor is provided, Create calls the value processor function on all returned
+// values of each constructor. This can used to cache/use the values outside the container.
+func (c *Container) Create(vp ValueProcessor) error {
 	vals := []reflect.Value{}
 	resProc := func(v reflect.Value) error {
-		t := valType(v)
+		t := baseType(v.Type())
 		if _, err := c.get(t); err == nil {
 			return fmt.Errorf("type %v is already present", v.Type())
 		}
@@ -108,29 +112,35 @@ func (c *Container) Add(ctr interface{}, vp ValueProcessor) error {
 		return nil
 	}
 
-	// Invoke this constructor with our own result processor
-	if err := c.Invoke(ctr, resProc); err != nil {
-		return err
+	for _, n := range c.dag.Sort() {
+		ctr := n.Value
+		if ctr == nil {
+			// This dependency MUST be provided by the parent hierarchy, else
+			// invoke will fail with a dependency not met error
+			continue
+		}
+
+		// Invoke this constructor with our own result processor
+		vals = []reflect.Value{}
+		if err := c.Invoke(ctr, resProc); err != nil {
+			return err
+		}
+		// Cache all the values produced by this invocation.
+		for _, v := range vals {
+			t := baseType(v.Type())
+			c.objTable[t] = v
+		}
 	}
 
-	// Cache all the values produced by this invocation.
-	for _, v := range vals {
-		t := valType(v)
-		c.objTable[t] = v
-	}
 	return nil
 }
 
 // buildArgs builds the arguments required by the constructor by looking
 // up the object table.
 func (c *Container) buildArgs(ctrType reflect.Type) ([]reflect.Value, error) {
-	numArgs := ctrType.NumIn()
-	if ctrType.IsVariadic() {
-		// Ignore the variadic argument
-		numArgs--
-	}
-	vals := make([]reflect.Value, 0, numArgs)
-	for i := 0; i < numArgs; i++ {
+	n := numArgs(ctrType)
+	vals := make([]reflect.Value, 0, n)
+	for i := 0; i < n; i++ {
 		v, err := c.get(ctrType.In(i))
 		if err != nil {
 			return nil, err
@@ -140,9 +150,90 @@ func (c *Container) buildArgs(ctrType reflect.Type) ([]reflect.Value, error) {
 	return vals, nil
 }
 
+// Add adds the component's constructor to the container. It returns an error if another
+// constructor is already producing this component. Add guarantees that the constructor
+// does not have cyclic dependencies to produce the components. It returns an error
+// if it detects cyclic dependencies.
+func (c *Container) Add(ctr interface{}) error {
+	// Verify that this infact is a function
+	ctrType := reflect.TypeOf(ctr)
+	if err := checkFunc(ctr, ctrType); err != nil {
+		return err
+	}
+
+	nOut := ctrType.NumOut()
+	if nOut > 0 && baseType(ctrType.Out(nOut-1)).Implements(_errType) {
+		// Ignore the error type
+		nOut--
+	}
+	if nOut <= 0 {
+		return fmt.Errorf("Constructor function must construct something other than errors")
+	}
+
+	// Compute all the arguments to the constructor as dependencies
+	n := numArgs(ctrType)
+	dependencies := make([]reflect.Type, 0, n)
+	for i := 0; i < n; i++ {
+		t := baseType(ctrType.In(i))
+		if t.Implements(_errType) {
+			return fmt.Errorf("constructor cannot depend on error type")
+		}
+		dependencies = append(dependencies, t)
+	}
+
+	// Add all the output parameters to the graph as producers
+	for i := 0; i < nOut; i++ {
+		t := baseType(ctrType.Out(i))
+		if !t.Implements(_errType) {
+			if c.dag.AddVertex(t, ctr) != nil {
+				// This may be out of order dependency, lets access the vertex and see if
+				// there is already constructor set.
+				v := c.dag.GetValue(t)
+				if v != nil {
+					// Before returning this error remove the vertices that are already
+					// added as part of this constructor
+					for addIndex := 0; addIndex < i; addIndex++ {
+						t := baseType(ctrType.Out(addIndex))
+						c.dag.RemoveVertex(t)
+					}
+					return fmt.Errorf("constructor for type %v is already present", t)
+				} // set the out of order dependency, now the provider is set!
+				c.dag.SetValue(t, ctr)
+			}
+
+			// Add all the dependencies as edges to this vertex
+			for _, d := range dependencies {
+				// Add the dependency to the graph so that the dependency for this constructor
+				// is captured. We can ignore the error, it simply means someone else is also dependent
+				// on the same type or the dependencies provider is already present in the graph.
+				// If it is not present, this makes a forward reference for the provider to be registered
+				// our of order
+				c.dag.AddVertex(d, nil)
+
+				// As the dependency vertex is already added if this fails it means that this is a
+				// cyclic dependency
+				if c.dag.AddDependencies(t, d) != nil {
+					return fmt.Errorf("dependency %v to produce %v is cyclic", d, t)
+				}
+			}
+		}
+	}
+
+	return nil
+}
+
+func numArgs(ctrType reflect.Type) int {
+	n := ctrType.NumIn()
+	if ctrType.IsVariadic() {
+		// Ignore the variadic argument
+		n--
+	}
+	return n
+}
+
 func (c *Container) checkParent(in reflect.Type) bool {
 	if c.parent != nil {
-		for _, dup := range c.dups {
+		for _, dup := range c.dupes {
 			if in == dup {
 				return false
 			}
@@ -167,11 +258,8 @@ func (c *Container) get(in reflect.Type) (reflect.Value, error) {
 	}
 
 	// Check in this container for the value
-	inType := in
-	if in.Kind() == reflect.Ptr {
-		inType = in.Elem()
-	}
-	v, ok := c.objTable[inType]
+	in = baseType(in)
+	v, ok := c.objTable[in]
 
 	if !ok {
 		return v, fmt.Errorf("dependency for type %v not found", in)
@@ -211,10 +299,9 @@ func checkFunc(ctr interface{}, f reflect.Type) error {
 }
 
 // Returns the type of this value
-func valType(v reflect.Value) reflect.Type {
-	t := v.Type()
-	if t.Kind() == reflect.Ptr {
-		t = t.Elem()
+func baseType(v reflect.Type) reflect.Type {
+	if v.Kind() == reflect.Ptr {
+		return v.Elem()
 	}
-	return t
+	return v
 }

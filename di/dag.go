@@ -1,8 +1,9 @@
 package di
 
 import (
-	"github.com/twmb/algoimpl/go/graph"
 	"fmt"
+
+	"github.com/twmb/algoimpl/go/graph"
 )
 
 // DAG is responsible to gather all the components and their dependencies,
@@ -19,8 +20,31 @@ type Value interface{}
 // Graph is collection of vertices and edges between them.
 // In dag, sort implement a topological sort for the graph.
 type Graph interface {
-	NewVertex(Key, Value) error
-	Edge(Key, ...Key) error
+	// AddVertex creates a new vertex in the graph with the specified key and stores
+	// value provided in the vertex. It returns an error if the vertex specified by
+	// the key already exists.
+	AddVertex(Key, Value) error
+
+	// RemoveVertex removes the vertex specified by the key. It returns an error
+	// if the vertex corresponding to the key is not present in the graph.
+	RemoveVertex(Key) error
+
+	// AddDependencies creates a dependency between a given vertex and the provided
+	// list of dependency vertices. This returns an error if either the vertex or the
+	// dependency is not present in the graph or a make a node depends on itself.
+	// Adding an dependency that creates a cycle in the graph is not allowed.
+	AddDependencies(Key, ...Key) error
+
+	// GetValue returns the value of the vertex specified by the key. It returns nil if the
+	// vertex is not present in the graph.
+	GetValue(Key) Value
+
+	// SetValue sets the value of the vertex specified by the key. It returns an error if
+	// the vertex is not present in the graph
+	SetValue(Key, Value) error
+
+	// Sort returns all the vertex entries in the dependency order. Vertices are ordered in
+	// such a way that a vertex's dependencies will always preseed itself.
 	Sort() []Vertex
 }
 
@@ -46,7 +70,7 @@ type dag struct {
 	vertices map[Key]graph.Node
 }
 
-func (dg *dag) NewVertex(key Key, val Value) error {
+func (dg *dag) AddVertex(key Key, val Value) error {
 	if _, ok := dg.vertices[key]; ok {
 		return fmt.Errorf("key %s already exists", key)
 	}
@@ -56,25 +80,32 @@ func (dg *dag) NewVertex(key Key, val Value) error {
 	return nil
 }
 
+func (dg *dag) RemoveVertex(key Key) error {
+	v, ok := dg.vertices[key]
+	if !ok {
+		return fmt.Errorf("key %s does not exist", key)
+	}
+	dg.graph.RemoveNode(&v)
+	delete(dg.vertices, key)
+	return nil
+}
 
-func (dg *dag) Edge(node Key, dependencies ...Key) error {
+func (dg *dag) AddDependencies(vertex Key, dependencies ...Key) error {
 	for _, dep := range dependencies {
-		if err := dg.addEdge(node, dep); err != nil {
+		srcObj, ok := dg.vertices[vertex]
+		if !ok {
+			return fmt.Errorf("key %s does not exist", vertex)
+		}
+
+		if err := dg.addDep(srcObj, vertex, dep); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-// Edge creates a dependency between two vertices. This returns an error
-// if either the node or the dependency is not present in the graph or
-// a make a node depends on itself. Adding an edge that creates
-// a cycle in the graph is not allowed.
-func (dg *dag) addEdge(node Key, dependency Key) error {
-	srcObj, ok := dg.vertices[node];
-	if !ok {
-		return fmt.Errorf("key %s does not exist", node)
-	}
+// adds a single dependency to the graph
+func (dg *dag) addDep(srcObj graph.Node, node Key, dependency Key) error {
 	dstObj, ok := dg.vertices[dependency]
 	if !ok {
 		return fmt.Errorf("key %s does not exist", dependency)
@@ -92,6 +123,25 @@ func (dg *dag) addEdge(node Key, dependency Key) error {
 	}
 	return nil
 
+}
+
+// Return the vertex by its key if exists else return nil.
+func (dg *dag) GetValue(v Key) Value {
+	if o, ok := dg.vertices[v]; ok {
+		vertex := (*o.Value).(*Vertex)
+		return vertex.Value
+	}
+	return nil
+}
+
+// Set the value of the vertex if exists else return error.
+func (dg *dag) SetValue(v Key, val Value) error {
+	if o, ok := dg.vertices[v]; ok {
+		vertex := (*o.Value).(*Vertex)
+		vertex.Value = val
+		return nil
+	}
+	return fmt.Errorf("key %s does not exist", v)
 }
 
 // A sorted traversal of this graph will guarantee the

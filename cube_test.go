@@ -51,6 +51,13 @@ func TestCubePanics(t *testing.T) {
 	os.Args = []string{"cube.test"}
 	defer func() { os.Args = oldArgs }()
 
+	Convey("cube main should panic on create error", t, func() {
+		initFunc := func(g component.Group) error {
+			return g.Add(func(bool) int { return 0 })
+		}
+		So(func() { Main(initFunc) }, ShouldPanic)
+	})
+
 	Convey("cube main should panic on config error", t, func() {
 		initFunc := func(g component.Group) error { return g.Add(newBadConfig) }
 		So(func() { Main(initFunc) }, ShouldPanic)
@@ -68,18 +75,21 @@ func TestCubePanics(t *testing.T) {
 		}
 		So(func() { Main(initFunc) }, ShouldPanic)
 	})
+
 	Convey("cube main should panic on stop errors", t, func() {
 		initFunc := func(g component.Group) error {
 			g.Add(func() *stoptester { return &stoptester{} })
-			g.Add(func(s *stoptester, k component.ServerShutdown) { k() })
+			g.Add(func(s *stoptester, k component.ServerShutdown) int { k(); return 0 })
 			return nil
 		}
 		So(func() { Main(initFunc) }, ShouldPanic)
 	})
+
 	Convey("calling shutdown handler should stop server", t, func() {
 		initFunc := func(g component.Group) error {
-			g.Add(func(s *shutDownHandler) {
+			g.Add(func(s *shutDownHandler) int {
 				s.shut(syscall.SIGTERM)
+				return 0
 			})
 			return nil
 		}
