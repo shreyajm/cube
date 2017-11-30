@@ -89,6 +89,7 @@ func TestGroup(t *testing.T) {
 
 		Convey("we should be able to add a component with no hooks", func() {
 			So(grp.Add(func(ctx Context) *cmp { return &cmp{} }), ShouldBeNil)
+			So(grp.Create(), ShouldBeNil)
 			So(grp.Configure(), ShouldBeNil)
 			So(grp.Start(), ShouldBeNil)
 			So(grp.Stop(), ShouldBeNil)
@@ -102,8 +103,8 @@ func TestGroup(t *testing.T) {
 		})
 
 		Convey("we should be able to add component with hooks", func() {
-			err := grp.Add(newCmpWithHooks)
-			So(err, ShouldBeNil)
+			So(grp.Add(newCmpWithHooks), ShouldBeNil)
+			So(grp.Create(), ShouldBeNil)
 			So(grp.IsHealthy(), ShouldBeFalse)
 
 			grp.Invoke(func(s *cmpWithHooks) {
@@ -126,7 +127,10 @@ func TestGroup(t *testing.T) {
 		})
 
 		Convey("check component with errors", func() {
+			So(grp.Add(func(*cmpWithErrors) int { return 0 }), ShouldBeNil)
+			So(grp.Create(), ShouldBeError)
 			So(grp.Add(newCmpWithErrors), ShouldBeNil)
+			So(grp.Create(), ShouldBeNil)
 			So(grp.IsHealthy(), ShouldBeFalse)
 			grp.Invoke(func(s *cmpWithErrors) {
 				Convey("configure the group should be error", func() {
@@ -163,6 +167,7 @@ func TestGroupHierarchy(t *testing.T) {
 		So(grp, ShouldNotBeNil)
 		Convey("we should be able to add component with hooks", func() {
 			So(grp.Add(newCmpWithHooks), ShouldBeNil)
+			So(root.Create(), ShouldBeNil)
 			So(root.IsHealthy(), ShouldBeFalse)
 
 			grp.Invoke(func(s *cmpWithHooks) {
@@ -185,6 +190,8 @@ func TestGroupHierarchy(t *testing.T) {
 		})
 		Convey("check component with errors", func() {
 			So(grp.Add(newCmpWithErrors), ShouldBeNil)
+			So(grp.IsHealthy(), ShouldBeTrue)
+			So(root.Create(), ShouldBeNil)
 			So(grp.IsHealthy(), ShouldBeFalse)
 			grp.Invoke(func(s *cmpWithErrors) {
 				Convey("configure the group should be error", func() {
@@ -205,7 +212,12 @@ func TestGroupHierarchy(t *testing.T) {
 				})
 			})
 		})
+		Convey("create error", func() {
+			So(grp.Add(func(*cmpWithErrors) int { return 0 }), ShouldBeNil)
+			So(root.Create(), ShouldBeError)
+		})
 		Convey("check for unique contexts", func() {
+			So(root.Create(), ShouldBeNil)
 			var baseCtx Context
 			var derivedCtx Context
 			// Capture the base context
@@ -236,6 +248,7 @@ func TestBadFileStore(t *testing.T) {
 		So(grp, ShouldNotBeNil)
 		So(grp.parent, ShouldBeNil)
 		So(grp.ctx, ShouldNotBeNil)
+		So(grp.Create(), ShouldBeNil)
 		So(grp.Configure(), ShouldNotBeNil)
 		So(grp.store.Get(&config.BaseConfig{ConfigKey: "test"}), ShouldNotBeNil)
 	})
@@ -251,6 +264,7 @@ func TestFileStore(t *testing.T) {
 		So(grp, ShouldNotBeNil)
 		So(grp.parent, ShouldBeNil)
 		So(grp.ctx, ShouldNotBeNil)
+		So(grp.Create(), ShouldBeNil)
 		So(grp.Configure(), ShouldBeNil)
 		So(grp.store.Get(&config.BaseConfig{ConfigKey: "test"}), ShouldNotBeNil)
 	})
@@ -266,10 +280,13 @@ func TestMemStore(t *testing.T) {
 		So(grp, ShouldNotBeNil)
 		So(grp.parent, ShouldBeNil)
 		So(grp.ctx, ShouldNotBeNil)
+		So(grp.Create(), ShouldBeNil)
 		So(grp.Configure(), ShouldBeNil)
+		grp = New("base").(*group)
 		So(grp.store.Get(&config.BaseConfig{ConfigKey: "test"}), ShouldNotBeNil)
-		grp.Add(newCmpConfigError)
-		So(grp.Configure(), ShouldNotBeNil)
+		So(grp.Add(newCmpConfigError), ShouldBeNil)
+		So(grp.Create(), ShouldBeNil)
+		So(grp.Configure(), ShouldBeError)
 	})
 }
 
@@ -283,7 +300,8 @@ func TestBadCli(t *testing.T) {
 		So(grp, ShouldNotBeNil)
 		So(grp.parent, ShouldBeNil)
 		So(grp.ctx, ShouldNotBeNil)
-		So(grp.Configure(), ShouldNotBeNil)
+		So(grp.Create(), ShouldBeNil)
 		So(grp.store.Get(&config.BaseConfig{ConfigKey: "test"}), ShouldNotBeNil)
+		So(grp.Configure(), ShouldBeError)
 	})
 }

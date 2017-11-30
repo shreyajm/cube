@@ -59,6 +59,7 @@ func TestSignals(t *testing.T) {
 		Convey("Should be able to start the component", func() {
 			grp := component.New("signal_test")
 			So(grp.Add(New), ShouldBeNil)
+			So(grp.Create(), ShouldBeNil)
 
 			grp.Invoke(func(s Router) {
 				sh := &sigH{[]os.Signal{}, &sync.RWMutex{}}
