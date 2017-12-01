@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/anuvu/cube/service"
+	"github.com/anuvu/cube/component"
 	. "github.com/smartystreets/goconvey/convey"
 )
 
@@ -33,8 +33,12 @@ func (s *sigH) Sig(i int) os.Signal {
 }
 
 func TestSignals(t *testing.T) {
+	// Replace os.Args
+	oldArgs := os.Args
+	os.Args = []string{"signal.test"}
+	defer func() { os.Args = oldArgs }()
 	Convey("Create a signal Router", t, func() {
-		s := NewSignalRouter(service.NewContext())
+		s := New()
 		So(s, ShouldNotBeNil)
 		Convey("Should be able add handler", func() {
 			So(s.IsIgnored(syscall.SIGINT), ShouldBeFalse)
@@ -52,31 +56,41 @@ func TestSignals(t *testing.T) {
 			So(s.IsHandled(syscall.SIGINT), ShouldBeFalse)
 		})
 
-		Convey("Should be able to start the service", func() {
-			sh := &sigH{[]os.Signal{}, &sync.RWMutex{}}
-			s.Handle(syscall.SIGINT, sh.handle)
-			So(s.IsHandled(syscall.SIGINT), ShouldBeTrue)
-			So(len(sh.s), ShouldEqual, 0)
-			// Check lifecycle
-			So(IsHealthy(s), ShouldBeFalse)
-			StartRouter(s)
-			So(IsHealthy(s), ShouldBeTrue)
+		Convey("Should be able to start the component", func() {
+			grp := component.New("signal_test")
+			So(grp.Add(New), ShouldBeNil)
+			So(grp.Create(), ShouldBeNil)
 
-			Convey("Should be able to handle a signal", func() {
-				// Fire a signal
-				s.(*router).signalCh <- syscall.SIGINT
+			grp.Invoke(func(s Router) {
+				sh := &sigH{[]os.Signal{}, &sync.RWMutex{}}
+				s.Handle(syscall.SIGINT, sh.handle)
+				So(s.IsHandled(syscall.SIGINT), ShouldBeTrue)
+				So(len(sh.s), ShouldEqual, 0)
 
-				// Sleep for a second
-				time.Sleep(time.Second)
-				So(sh.Len(), ShouldEqual, 1)
-				So(sh.Sig(0), ShouldEqual, syscall.SIGINT)
-			})
+				// Check lifecycle
+				So(grp.IsHealthy(), ShouldBeFalse)
+				So(grp.Configure(), ShouldBeNil)
+				So(grp.Start(), ShouldBeNil)
+				So(grp.IsHealthy(), ShouldBeTrue)
 
-			Convey("Should be able to stop the service", func() {
-				So(IsHealthy(s), ShouldBeTrue)
-				So(StopRouter(s), ShouldBeNil)
-				time.Sleep(time.Second)
-				So(IsHealthy(s), ShouldBeFalse)
+				Convey("Should be able to handle a signal", func() {
+					// Fire a signal
+					s.(*router).signalCh <- syscall.SIGINT
+
+					// Sleep for a second
+					time.Sleep(time.Second)
+					So(sh.Len(), ShouldEqual, 1)
+					So(sh.Sig(0), ShouldEqual, syscall.SIGINT)
+				})
+
+				Convey("Should be able to stop the component", func() {
+					So(grp.IsHealthy(), ShouldBeTrue)
+					grp.Invoke(func(sf component.Shutdown) {
+						sf()
+					})
+					time.Sleep(time.Second)
+					So(grp.IsHealthy(), ShouldBeFalse)
+				})
 			})
 		})
 	})

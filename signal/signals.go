@@ -5,7 +5,7 @@ import (
 	"os/signal"
 	"sync"
 
-	"github.com/anuvu/cube/service"
+	"github.com/anuvu/cube/component"
 )
 
 // Handler is a function that handles the signal.
@@ -33,21 +33,20 @@ type router struct {
 	signalCh   chan os.Signal
 	signals    map[os.Signal]Handler
 	ignSignals map[os.Signal]struct{}
-	ctx        service.Context
 	running    bool
 	lock       *sync.RWMutex
 }
 
-// NewSignalRouter returns a signal router.
-func NewSignalRouter(srvCtx service.Context) Router {
-	return &router{
+// New returns a signal router.
+func New() Router {
+	r := &router{
 		signalCh:   make(chan os.Signal),
 		signals:    make(map[os.Signal]Handler),
 		ignSignals: make(map[os.Signal]struct{}),
-		ctx:        srvCtx,
 		running:    false,
 		lock:       &sync.RWMutex{},
 	}
+	return r
 }
 
 func (s *router) Handle(sig os.Signal, h Handler) {
@@ -88,8 +87,7 @@ func (s *router) IsIgnored(sig os.Signal) bool {
 }
 
 // StartRouter starts the signal router and listens for registered signals.
-func StartRouter(r Router) error {
-	s := r.(*router)
+func (s *router) Start(ctx component.Context) error {
 	go func() {
 		defer func() {
 			s.lock.Lock()
@@ -99,7 +97,7 @@ func StartRouter(r Router) error {
 		// This go routine dies with the server
 		for {
 			select {
-			case <-s.ctx.Ctx().Done():
+			case <-ctx.Ctx().Done():
 				// We are done exit.
 				return
 			case sig := <-s.signalCh:
@@ -119,16 +117,8 @@ func StartRouter(r Router) error {
 	return nil
 }
 
-// StopRouter stops the service router.
-func StopRouter(r Router) error {
-	s := r.(*router)
-	s.ctx.Shutdown()
-	return nil
-}
-
 // IsHealthy returns true if the router is running, else false.
-func IsHealthy(r Router) bool {
-	s := r.(*router)
+func (s *router) IsHealthy(ctx component.Context) bool {
 	s.lock.RLock()
 	defer s.lock.RUnlock()
 	return s.running
